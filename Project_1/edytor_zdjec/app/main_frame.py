@@ -13,7 +13,6 @@ Schemat działania:
 
 import tkinter as tk
 from app.ui.menu       import AppMenu
-from app.ui.toolbar    import Toolbar
 from app.ui.canvas     import ImageCanvas
 from app.ui.sidebar    import Sidebar
 from app.ui.status_bar import StatusBar
@@ -34,7 +33,8 @@ class MainFrame:
         self.file    = FileHandler()
         self.filters = Filters()   
         self._preview_base  = None   # obraz przed bieżącą sesją filtra
-        self.active_filter  = None   # "binarize" | "brightness" | "contrast" | None     
+        self.active_filter  = None   # "binarize" | "brightness" | "contrast" | None  
+        self._pending_result = None   
 
         # ── UI ────────────────────────────────────────────────
         self.menu       = AppMenu(root,     callbacks=self._menu_callbacks())
@@ -45,8 +45,9 @@ class MainFrame:
         main_area = tk.Frame(root)
         main_area.pack(fill=tk.BOTH, expand=True)
 
-        self.canvas  = ImageCanvas(main_area)
         self.sidebar = Sidebar(main_area, callbacks=self._sidebar_callbacks())
+        self.canvas  = ImageCanvas(main_area)
+        
 
         # ── Skróty klawiszowe ─────────────────────────────────
         root.bind("<Control-o>", lambda e: self._open())
@@ -77,17 +78,11 @@ class MainFrame:
             "show_info": self._show_info,
         }
 
-    # def _toolbar_callbacks(self) -> dict:
-    #     return {
-    #         "open":  self._open,
-    #         "save":  self._save,
-    #         "undo":  self._undo,
-    #         # "crop": self._crop,       
-    #     }
 
     def _sidebar_callbacks(self) -> dict:
         return {
             "apply": self._apply_changes,
+            "cancel":  self._cancel,
             "preview": self._preview, 
         }
 
@@ -95,11 +90,20 @@ class MainFrame:
     #  AKCJE (łączą UI ↔ logikę)
     # ──────────────────────────────────────────────────────────
 
+
+    # Poniższa funkcja dodaje miniaturkę w slidebar, który tworzy i resetuje też historię zmian. 
     def _open(self):
         image = self.file.open_image()
         if image:
             self.history.reset(image)
+            self._preview_base = image.copy()
+            self._original = image.copy()      
+            self.active_filter = None
+            self._pending_result = None
             self.canvas.show(image)
+            self.sidebar.update_thumbnail(image)   
+            self.sidebar.set_idle()
+            self.sidebar.show()
             self.status_bar.set_info(image, self.file.path)
 
     def _save(self):
@@ -116,12 +120,21 @@ class MainFrame:
         image = self.history.undo()
         if image:
             self._preview_base = image.copy()
+            self._pending_result = None
             self.active_filter = None
             self.canvas.show(image)
+            self.sidebar.set_idle()
             self.status_bar.set_text("Cofnięto.")
 
-    
-    # ── Preview – zawsze na _preview_base ────────────────────────
+    def _cancel(self):
+        if self._preview_base is None:
+            return
+        self._pending_result = None
+        self.active_filter = None
+        self.canvas.show(self._preview_base)
+        self.sidebar.set_idle()
+        self.status_bar.set_text("Anulowano.")
+
     def _preview(self):
         if self._preview_base is None or self.active_filter is None:
             return
@@ -136,105 +149,74 @@ class MainFrame:
                         float(self.sidebar.contrast.get()))
         else:
             return
+        self._pending_result = result
         self.canvas.show(result)
-
 
     def _apply_changes(self):
-        if self._preview_base is None or self.active_filter is None:
-            self.status_bar.set_text("Najpierw wybierz filtr z menu.")
+        if self._pending_result is None:
             return
-        if self.active_filter == "binarize":
-            result = self.filters.binarize(self._preview_base,
-                        int(self.sidebar.threshold.get()))
-        elif self.active_filter == "brightness":
-            result = self.filters.brightness(self._preview_base,
-                        float(self.sidebar.brightness.get()))
-        elif self.active_filter == "contrast":
-            result = self.filters.contrast(self._preview_base,
-                        float(self.sidebar.contrast.get()))
-        else:
-            return
-
-        self.history.push(result)
-        self._preview_base = result.copy()   
-        self.active_filter = None            
-        self.canvas.show(result)
+        self.history.push(self._pending_result)
+        self._preview_base = self._pending_result.copy()
+        self._pending_result = None
+        self.active_filter = None
+        self.canvas.show(self._preview_base)
+        self.sidebar.set_idle()
         self.status_bar.set_text("Zastosowano zmiany.")
-        self.sidebar.show_controls(None)
 
+    def _apply_one_click(self, filter_fn, label):
+        """Dla filtrów bez suwaka."""
+        current = self.history.current()
+        if current is None:
+            return
+        self._preview_base = current.copy()
+        self.active_filter = label
+        result = filter_fn(current)
+        self._pending_result = result              
+        self.canvas.show(result)
+        self.sidebar.show_filter_controls(label)  
+        self.status_bar.set_text(f"Podgląd: {label} – Zatwierdź lub Anuluj")
 
     def _gray_avg(self):
-        current = self.history.current()
-        if current is None: return
-        self.history.push(current)
-        result = self.filters.convert_to_gray_avg(current)
-        self.canvas.show(result)
-        self.status_bar.set_text("Zastosowano: Skala szarości (avg)")
+        self._apply_one_click(self.filters.convert_to_gray_avg, "gray_avg")
 
     def _gray_human(self):
-        current = self.history.current()
-        if current is None: return
-        self.history.push(current)
-        result = self.filters.convert_to_gray_human(current)
-        self.canvas.show(result)
-        self.status_bar.set_text("Zastosowano: Skala szarości (luminancja)")
+        self._apply_one_click(self.filters.convert_to_gray_human, "gray_human")
 
     def _negative(self):
-        current = self.history.current()
-        if current is None: return
-        self.history.push(current)
-        result = self.filters.negative(current)
-        self.canvas.show(result)
-        self.status_bar.set_text("Zastosowano: Negatyw")
+        self._apply_one_click(self.filters.negative, "negative")
 
     def _avg_filter(self):
-        current = self.history.current()
-        if current is None: return
-        self.history.push(current)
-        result = self.filters.average_filter(current)
-        self._preview_base = result.copy()
-        self.canvas.show(result)
-        self.status_bar.set_text("Zastosowano: Filtr uśredniający")
+        self._apply_one_click(self.filters.average_filter, "avg_filter")
 
     def _gauss_filter(self):
-        current = self.history.current()
-        if current is None: return
-        self.history.push(current)
-        result = self.filters.gaussian_filter(current)
-        self._preview_base = result.copy()
-        self.canvas.show(result)
-        self.status_bar.set_text("Zastosowano: Filtr Gaussa")
+        self._apply_one_click(self.filters.gaussian_filter, "gauss_filter")
 
     def _sharpen_filter(self):
-        current = self.history.current()
-        if current is None: return
-        self.history.push(current)
-        result = self.filters.sharpen_filter(current)
-        self._preview_base = result.copy()
-        self.canvas.show(result)
-        self.status_bar.set_text("Zastosowano: Filtr wyostrzający")
-
+        self._apply_one_click(self.filters.sharpen_filter, "sharpen_filter")
     
     # ── Ustawianie aktywnego filtra ───────────────────────────────
     def _set_filter_binarize(self):
         self._preview_base = self.history.current()
         self.active_filter = "binarize"
-        self.sidebar.show_controls("binarize")   
+        self._pending_result = None
+        self.sidebar.show_filter_controls("binarize")   
         self._preview()
 
     def _set_filter_brightness(self):
         self._preview_base = self.history.current()
         self.active_filter = "brightness"
-        self.sidebar.show_controls("brightness") 
+        self._pending_result = None
+        self.sidebar.show_filter_controls("brightness") 
         self._preview()
 
     def _set_filter_contrast(self):
         self._preview_base = self.history.current()
         self.active_filter = "contrast"
-        self.sidebar.show_controls("contrast")   
+        self._pending_result = None
+        self.sidebar.show_filter_controls("contrast")   
         self._preview()
 
-    # Info o obrazie
+    # Info o obrazie    
     def _show_info(self):
         current = self.history.current()
         if current is None:

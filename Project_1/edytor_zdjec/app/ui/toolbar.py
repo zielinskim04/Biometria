@@ -1,3 +1,6 @@
+#!!! Nie jest używany w tym momencie!!!
+
+
 """
 toolbar.py
 ──────────

@@ -34,28 +34,11 @@ class AppMenu:
         edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Edycja", menu=edit_menu)
         edit_menu.add_command(label="Cofnij             Ctrl+Z",       command=self.cb.get("undo"))
-        edit_menu.add_separator()
-
-        # ╔══════════════════════════════════════════════════╗
-        # ║  TUTAJ DODAJ WPISY MENU EDYCJA                  ║
-        # ║                                                  ║
-        # ║  edit_menu.add_command(                          ║
-        # ║      label="Przytnij",                           ║
-        # ║      command=self.cb.get("crop")                 ║
-        # ║  )                                               ║
-        # ║  Pamiętaj dodać "crop" do callbacks w           ║
-        # ║  main_frame._menu_callbacks()                    ║
-        # ╚══════════════════════════════════════════════════╝
+        #edit_menu.add_separator()
 
         # ── Filtry ────────────────────────────────────────────
         filter_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Filtry", menu=filter_menu)
-
-        # filter_menu.add_command(label="Skala szarości (avg)",       command=self.cb.get("gray_avg"))
-        # filter_menu.add_command(label="Skala szarości (luminancja)", command=self.cb.get("gray_human"))
-        # filter_menu.add_command(label="Negatyw",                    command=self.cb.get("negative"))
-        # filter_menu.add_command(label="Binaryzacja",                command=self.cb.get("binarize"))
-        # # menu.py – w sekcji filter_menu
 
         filter_menu.add_command(label="Skala szarości (avg)",        command=self.cb.get("gray_avg"))
         filter_menu.add_command(label="Skala szarości (luminancja)", command=self.cb.get("gray_human"))
@@ -64,12 +47,19 @@ class AppMenu:
         filter_menu.add_command(label="Binaryzacja",                 command=self.cb.get("binarize"))
         filter_menu.add_command(label="Jasność",                     command=self.cb.get("brightness"))
         filter_menu.add_command(label="Kontrast",                    command=self.cb.get("contrast"))
+        filter_menu.add_separator()
+        filter_menu.add_command(label="Filtr uśredniający", command=self.cb.get("avg_filter"))
+        filter_menu.add_command(label="Filtr Gaussa",       command=self.cb.get("gauss_filter"))
+        filter_menu.add_command(label="Filtr wyostrzający", command=self.cb.get("sharpen_filter"))
 
-        # ╔══════════════════════════════════════════════════╗
-        # ║  TUTAJ DODAJ FILTRY                             ║
-        # ║                                                  ║
-        # ║  filter_menu.add_command(                        ║
-        # ║      label="Rozmycie",                           ║
-        # ║      command=self.cb.get("blur")                 ║
-        # ║  )                                               ║
-        # ╚══════════════════════════════════════════════════╝
+        # ── Info ──────────────────────────────────────────────────
+        info_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Info o obrazie", menu=info_menu)
+        info_menu.add_command(label="Info o obrazie", command=self.cb.get("show_info"))
+
+
+        # ── Histogramy ────────────────────────────────────────────
+        histogram_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Histogramy", menu=histogram_menu)
+
+

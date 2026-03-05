@@ -38,7 +38,7 @@ class MainFrame:
 
         # ── UI ────────────────────────────────────────────────
         self.menu       = AppMenu(root,     callbacks=self._menu_callbacks())
-        self.toolbar    = Toolbar(root,     callbacks=self._toolbar_callbacks())
+        # self.toolbar    = Toolbar(root,     callbacks=self._toolbar_callbacks())
         self.status_bar = StatusBar(root)
 
         # Środkowa część okna: canvas + sidebar obok siebie
@@ -71,15 +71,19 @@ class MainFrame:
             "binarize":   self._set_filter_binarize,    
             "brightness": self._set_filter_brightness,
             "contrast":   self._set_filter_contrast,
+            "avg_filter":    self._avg_filter,
+            "gauss_filter":  self._gauss_filter,
+            "sharpen_filter": self._sharpen_filter,
+            "show_info": self._show_info,
         }
 
-    def _toolbar_callbacks(self) -> dict:
-        return {
-            "open":  self._open,
-            "save":  self._save,
-            "undo":  self._undo,
-            # "crop": self._crop,       ← dodaj tu przyciski paska narzędzi
-        }
+    # def _toolbar_callbacks(self) -> dict:
+    #     return {
+    #         "open":  self._open,
+    #         "save":  self._save,
+    #         "undo":  self._undo,
+    #         # "crop": self._crop,       
+    #     }
 
     def _sidebar_callbacks(self) -> dict:
         return {
@@ -108,11 +112,6 @@ class MainFrame:
         self.file.save_as(image)
         self.status_bar.set_text(f"Zapisano jako: {self.file.path}")
 
-    # def _undo(self):
-    #     image = self.history.undo()
-    #     if image:
-    #         self.canvas.show(image)
-    #         self.status_bar.set_text("Cofnięto ostatnią operację.")
     def _undo(self):
         image = self.history.undo()
         if image:
@@ -140,16 +139,6 @@ class MainFrame:
         self.canvas.show(result)
 
 
-    # def _apply_changes(self):
-    #     """Zatwierdza – zapisuje do historii, można cofnąć Ctrl+Z."""
-    #     current = self.history.current()
-    #     if current is None:
-    #         return
-    #     threshold = int(self.sidebar.threshold.get())
-    #     result = self.filters.binarize(current, threshold)
-    #     self.history.push(result)           # ← dopiero tu zapis
-    #     self.canvas.show(result)
-    #     self.status_bar.set_text(f"Zastosowano binaryzację, próg: {threshold}")
     def _apply_changes(self):
         if self._preview_base is None or self.active_filter is None:
             self.status_bar.set_text("Najpierw wybierz filtr z menu.")
@@ -167,10 +156,11 @@ class MainFrame:
             return
 
         self.history.push(result)
-        self._preview_base = result.copy()   # nowa baza = zatwierdzony obraz
-        self.active_filter = None            # reset trybu
+        self._preview_base = result.copy()   
+        self.active_filter = None            
         self.canvas.show(result)
         self.status_bar.set_text("Zastosowano zmiany.")
+        self.sidebar.show_controls(None)
 
 
     def _gray_avg(self):
@@ -197,31 +187,57 @@ class MainFrame:
         self.canvas.show(result)
         self.status_bar.set_text("Zastosowano: Negatyw")
 
-    # def _binarize(self):
-    #     """Zatwierdź – dopiero tu zapisz do historii."""
-    #     threshold = int(self.sidebar.threshold.get())
-    #     current = self.history.current()
-    #     if current is None:
-    #         return
-    #     result = self.filters.binarize(current, threshold)
-    #     self.history.push(result)          
-    #     self.canvas.show(result)
-    #     self.status_bar.set_text(f"Zastosowano binaryzację, próg: {threshold}")
+    def _avg_filter(self):
+        current = self.history.current()
+        if current is None: return
+        self.history.push(current)
+        result = self.filters.average_filter(current)
+        self._preview_base = result.copy()
+        self.canvas.show(result)
+        self.status_bar.set_text("Zastosowano: Filtr uśredniający")
+
+    def _gauss_filter(self):
+        current = self.history.current()
+        if current is None: return
+        self.history.push(current)
+        result = self.filters.gaussian_filter(current)
+        self._preview_base = result.copy()
+        self.canvas.show(result)
+        self.status_bar.set_text("Zastosowano: Filtr Gaussa")
+
+    def _sharpen_filter(self):
+        current = self.history.current()
+        if current is None: return
+        self.history.push(current)
+        result = self.filters.sharpen_filter(current)
+        self._preview_base = result.copy()
+        self.canvas.show(result)
+        self.status_bar.set_text("Zastosowano: Filtr wyostrzający")
+
+    
     # ── Ustawianie aktywnego filtra ───────────────────────────────
     def _set_filter_binarize(self):
         self._preview_base = self.history.current()
         self.active_filter = "binarize"
+        self.sidebar.show_controls("binarize")   
         self._preview()
-        self.status_bar.set_text("Tryb: binaryzacja – przesuń suwak, kliknij Zastosuj")
 
     def _set_filter_brightness(self):
         self._preview_base = self.history.current()
         self.active_filter = "brightness"
+        self.sidebar.show_controls("brightness") 
         self._preview()
-        self.status_bar.set_text("Tryb: jasność – przesuń suwak, kliknij Zastosuj")
 
     def _set_filter_contrast(self):
         self._preview_base = self.history.current()
         self.active_filter = "contrast"
+        self.sidebar.show_controls("contrast")   
         self._preview()
-        self.status_bar.set_text("Tryb: kontrast – przesuń suwak, kliknij Zastosuj")
+
+    # Info o obrazie
+    def _show_info(self):
+        current = self.history.current()
+        if current is None:
+            self.status_bar.set_text("Brak obrazu.")
+            return
+        self.sidebar.show_info(current, self.file.path)

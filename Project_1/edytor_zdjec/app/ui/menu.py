@@ -51,6 +51,11 @@ class AppMenu:
         filter_menu.add_command(label="Filtr uśredniający", command=self.cb.get("avg_filter"))
         filter_menu.add_command(label="Filtr Gaussa",       command=self.cb.get("gauss_filter"))
         filter_menu.add_command(label="Filtr wyostrzający", command=self.cb.get("sharpen_filter"))
+        filter_menu.add_command(label="Krzyż Robertsa", command=self.cb.get("roberts_cross"))
+        filter_menu.add_command(label="Operator Prewitta", command=self.cb.get("prewitt_operator"))
+        filter_menu.add_command(label="Operator Sobela", command=self.cb.get("sobel_operator"))
+
+
 
         # ── Info ──────────────────────────────────────────────────
         info_menu = tk.Menu(menubar, tearoff=0)

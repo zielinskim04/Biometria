@@ -12,7 +12,7 @@ class Filters:
         for i in range(rows):
             for j in range(cols):
                 gray[i,j] = (int(img[i,j,0]) + int(img[i,j,1]) + int(img[i,j,2])) // 3
-        return Image.fromarray(gray).convert("RGB")  # ← PIL.Image z powrotem
+        return Image.fromarray(gray).convert("RGB")
 
     def convert_to_gray_human(self, image: Image.Image) -> Image.Image:
         img = np.array(image)
@@ -35,17 +35,17 @@ class Filters:
         return Image.fromarray(neg).convert("RGB")
 
     def binarize(self, image: Image.Image, threshold: int = 128) -> Image.Image:
-        img = np.array(image.convert("L"))  # greyscale numpy
-        rows, cols = img.shape
+        img = np.array(self.convert_to_gray_avg(image)) 
+        rows, cols = img.shape[:2]
         result = np.zeros((rows, cols), dtype='uint8')
         for i in range(rows):
             for j in range(cols):
-                result[i,j] = 255 if img[i,j] > threshold else 0
+                result[i,j] = 255 if img[i,j,0] > threshold else 0
         return Image.fromarray(result).convert("RGB")
 
     def brightness(self, image: Image.Image, factor: float) -> Image.Image:
         """factor: 0.0 = czarny, 1.0 = bez zmian, 2.0 = 2x jaśniej"""
-        img = np.array(image).astype('float32')
+        img = np.array(image).astype('float32') 
         result = np.clip(img * factor, 0, 255).astype('uint8')
         return Image.fromarray(result)
 
@@ -86,7 +86,7 @@ class Filters:
                     result[i,j,c] = np.sum(padded[i:i+size, j:j+size, c] * kernel)
         return Image.fromarray(result.astype('uint8'))
 
-    def sharpen_filter(self, image):
+    def sharpen_filter(self, image: Image.Image):
         """Filtr wyostrzający – jądro z ujemnymi wagami wokół centrum"""
         kernel = np.array([[ 0, -1,  0],
                         [-1,  5, -1],
@@ -101,6 +101,77 @@ class Filters:
         result = np.clip(result, 0, 255)
         return Image.fromarray(result.astype('uint8'))
     
+    def roberts_cross(self, image) -> Image.Image:
+        img_gray = np.array(self.convert_to_gray_avg(image)) 
+        img = img_gray[:, :, 0].astype('float32') # tu wyciagam tylko 1 kanal skoro wszystkie sa takie same, tak samo mozna chyba w sharpen filter i jeden for mniej
+        rows, cols = img.shape
+        result = np.zeros((rows, cols), dtype='float32')
+        padded = np.pad(img, ((0,1), (0,1)), mode='edge')
+        kernel_x = np.array([[1, 0], [0, -1]], dtype='float32')
+        kernel_y = np.array([[0, 1], [-1, 0]], dtype='float32')
+        for i in range(rows):
+            for j in range(cols):
+                region = padded[i:i+2, j:j+2]
+                gx = np.sum(region * kernel_x)
+                gy = np.sum(region * kernel_y)
+                result[i,j] = np.sqrt(gx**2 + gy**2)
+                # lub 2 wersja szybsza - na prezentacji u niego bylo
+                # abs(gx) + abs(gy)
+        result = np.clip(result, 0, 255)
+        return Image.fromarray(result.astype('uint8')).convert("RGB")
+    
+    def prewitt_operator(self, image: Image.Image) -> Image.Image:
+        # SPRAWDZ CZY JA DOBRZE ROZUMIEM SLAJD Z TEGO BO MAM WATPLIWOSCI slajd 131
+        img_gray = np.array(self.convert_to_gray_avg(image))
+        img = img_gray[:, :, 0].astype('float32')
+        rows, cols = img.shape
+        result = np.zeros((rows, cols), dtype='float32')
+        padded = np.pad(img, ((1, 1), (1, 1)), mode='edge')
+        masks = [
+            np.array([[ 1,  1,  1], [ 0,  0,  0], [-1, -1, -1]]),
+            np.array([[ 0,  1,  1], [-1,  0,  1], [-1, -1,  0]]), 
+            np.array([[-1,  0,  1], [-1,  0,  1], [-1,  0,  1]]), 
+            np.array([[-1, -1,  0], [-1,  0,  1], [ 0,  1,  1]]), 
+            np.array([[-1, -1, -1], [ 0,  0,  0], [ 1,  1,  1]]),
+            np.array([[ 0, -1, -1], [ 1,  0, -1], [ 1,  1,  0]]), 
+            np.array([[ 1,  0, -1], [ 1,  0, -1], [ 1,  0, -1]]), 
+            np.array([[ 1,  1,  0], [ 1,  0, -1], [ 0, -1, -1]]) 
+        ]
+
+        for i in range(rows):
+            for j in range(cols):
+                region = padded[i:i+3, j:j+3]
+                max_val = 0
+                for m in masks:
+                    val = np.abs(np.sum(region * m))
+                    if val > max_val:
+                        max_val = val
+                result[i, j] = max_val
+
+        result = np.clip(result, 0, 255).astype('uint8')
+        return Image.fromarray(result, mode='L').convert("RGB")
+    
+
+    def sobel_operator(self, image: Image.Image) -> Image.Image:
+        # tutaj tez nie wiem czy nie trzeba sprawdzac 8 masek
+        img_gray = np.array(self.convert_to_gray_avg(image))
+        img = img_gray[:, :, 0].astype('float32')
+        rows, cols = img.shape
+        result = np.zeros((rows, cols), dtype='float32')
+        padded = np.pad(img, ((1, 1), (1, 1)), mode='edge')
+        
+        kernel_x = np.array([[ -1,  0,  1], [ -2,  0,  2], [-1, 0, 1]])
+        kernel_y = np.array([[ -1,  -2,  -1], [0,  0,  0], [1, 2,  1]]) 
+
+        for i in range(rows):
+            for j in range(cols):
+                region = padded[i:i+3, j:j+3]
+                gx = np.sum(region * kernel_x)
+                gy = np.sum(region * kernel_y)
+                result[i,j] = np.sqrt(gx**2 + gy**2)
+
+        result = np.clip(result, 0, 255).astype('uint8')
+        return Image.fromarray(result, mode='L').convert("RGB")
 
     #Do histogramu i wyrównywania histogramu, jeszcze nie są używane
     def compute_histogram(self, image):

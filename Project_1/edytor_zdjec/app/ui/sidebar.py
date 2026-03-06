@@ -80,6 +80,10 @@ class Sidebar:
         "avg_filter": "Filtr uśredniający",
         "gauss_filter": "Filtr Gaussa",
         "sharpen_filter": "Filtr wyostrzający",
+        "roberts_cross": "Krzyż Robertsa",
+        "prewitt_operator": "Operator Prewitta",
+        "sobel_operator": "Operator Sobela"
+        # "histogram": "Histogram"
         }
         self._title.config(text=titles.get(mode, "Edytor"))
         self._clear_dynamic()
@@ -92,6 +96,23 @@ class Sidebar:
             self._make_slider("Jasność", self.brightness, 0.0, 3.0, 0.05)
         elif mode == "contrast":
             self._make_slider("Kontrast", self.contrast, 0.0, 3.0, 0.05)
+
+
+        # elif mode == "histogram":
+        #     # Tworzymy obszar wykresu wewnątrz sekcji dynamicznej
+        #     self._hist_canvas = tk.Canvas(self._dynamic, width=200, height=100, 
+        #                                   bg="#2b2b2b", highlightthickness=0)
+        #     self._hist_canvas.pack(pady=5)
+            
+        #     tk.Label(self._dynamic, text="Rozkład jasności (0-255)", 
+        #              bg="#f0f0f0", fg="#666", font=("Helvetica", 8)).pack()
+            
+        #     # Możesz zmienić tekst przycisku Zatwierdź na "Zamknij"
+        #     for child in self._btn_frame.winfo_children():
+        #         if "Zatwierdź" in child.cget("text"):
+        #             child.config(text="✔ Ok")
+
+
         else:
             tk.Label(self._dynamic,
                      text="Podgląd aktywny.\nZatwierdź lub Anuluj.",
@@ -115,6 +136,27 @@ class Sidebar:
                       f"Piksele:  {w * h:,}",
                  bg="#f0f0f0", font=("Helvetica", 9), justify=tk.LEFT
                  ).pack(anchor=tk.W)
+        
+
+    # def update_histogram_plot(self, hist_data: dict):
+    #     """Rysuje słupki na Canvasie w sekcji dynamicznej."""
+    #     # Sprawdzamy, czy Canvas w ogóle istnieje (czy jesteśmy w trybie histogramu)
+    #     if not hasattr(self, '_hist_canvas'): return
+
+    #     self._hist_canvas.delete("all")
+        
+    #     # Pobieramy max do skalowania (zgodnie z Twoją funkcją compute_histogram)
+    #     max_v = max(max(hist_data['R']), max(hist_data['G']), max(hist_data['B']), 1)
+    #     w, h = 200, 100
+        
+    #     for i in range(256):
+    #         x = (i / 256) * w
+    #         # Rysujemy linie dla każdego kanału
+    #         for ch, col in [('R', '#ff4444'), ('G', '#44ff44'), ('B', '#4444ff')]:
+    #             val = (hist_data[ch][i] / max_v) * h
+    #             if val > 0:
+    #                 self._hist_canvas.create_line(x, h, x, h - val, fill=col)
+
 
     # ── Miniaturka ────────────────────────────────────────────
 

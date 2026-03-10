@@ -79,7 +79,8 @@ class MainFrame:
             "roberts_cross": self._roberts_cross,
             "prewitt_operator": self._prewitt_operator,
             "sobel_operator": self._sobel_operator,
-            # "histogram": self._on_histogram_click,
+            "histogram": self._on_histogram_click,
+            "equalize_histogram": self._equalize_histogram,
         }
 
 
@@ -207,17 +208,16 @@ class MainFrame:
     def _sobel_operator(self):
         self._apply_one_click(self.filters.sobel_operator, "sobel_operator")
 
-
-    # def _on_histogram_click(self):
-    #     img = self.history.current()
-    #     if img:
-    #         # 1. Przełączamy Sidebar w tryb "dynamiczny" dla histogramu
-    #         self.sidebar.show_filter_controls("histogram")
-    #         # 2. Obliczamy dane Twoją funkcją z pętlami
-    #         data = self.filters.compute_histogram(img)
-    #         # 3. Wysyłamy dane do narysowania
-    #         self.sidebar.update_histogram_plot(data)
+    def _on_histogram_click(self):
+        img = self.history.current()
+        if img:       
+            self.sidebar.show_filter_controls("histogram")
+            self.root.update_idletasks()
+            data = self.filters.compute_histogram(img)
+            self.sidebar.update_histogram_plot(data)
     
+    def _equalize_histogram(self):
+        self._apply_one_click(self.filters.equalize_histogram, "equalize_histogram")
     
     # ── Ustawianie aktywnego filtra ───────────────────────────────
     def _set_filter_binarize(self):

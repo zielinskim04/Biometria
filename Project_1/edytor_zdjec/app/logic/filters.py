@@ -173,10 +173,10 @@ class Filters:
         result = np.clip(result, 0, 255).astype('uint8')
         return Image.fromarray(result, mode='L').convert("RGB")
 
-    #Do histogramu i wyrównywania histogramu, jeszcze nie są używane
-    def compute_histogram(self, image):
-        """Zwraca histogram jako dict {R: array, G: array, B: array}"""
+    def compute_histogram(self, image: Image.Image):
         img = np.array(image)
+        # print(f"DEBUG: Kształt obrazu to: {img.shape}")
+        # print(f"Max wartość w obrazie: {np.max(img)}")
         hist = {}
         for i, channel in enumerate(['R', 'G', 'B']):
             hist[channel] = np.zeros(256, dtype=int)
@@ -185,8 +185,7 @@ class Filters:
         return hist
 
     def equalize_histogram(self, image):
-        """Wyrównywanie histogramu – poprawia kontrast"""
-        img = np.array(image.convert('L'))
+        img = np.array(self.convert_to_gray_avg(image))
         hist = np.zeros(256, dtype=int)
         for val in img.flatten():
             hist[val] += 1
@@ -196,3 +195,13 @@ class Filters:
         lut = np.round((cdf - cdf_min) / (n - cdf_min) * 255).astype('uint8')
         result = lut[img]
         return Image.fromarray(result).convert('RGB')
+    
+    def compute_projections(self, image):
+        img = np.array(self.convert_to_gray_avg(image))
+        
+        # axis=1 - suma wierszy (pozioma)
+        # axis=0 - suma kolumn (pionowa)
+        horizontal = np.sum(img, axis=1)
+        vertical = np.sum(img, axis=0)
+        
+        return horizontal, vertical

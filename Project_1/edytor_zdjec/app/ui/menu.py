@@ -54,7 +54,8 @@ class AppMenu:
         filter_menu.add_command(label="Krzyż Robertsa", command=self.cb.get("roberts_cross"))
         filter_menu.add_command(label="Operator Prewitta", command=self.cb.get("prewitt_operator"))
         filter_menu.add_command(label="Operator Sobela", command=self.cb.get("sobel_operator"))
-
+        filter_menu.add_separator()
+        filter_menu.add_command(label="Wyrównanie histogramu", command=self.cb.get("equalize_histogram"))
 
 
         # ── Info ──────────────────────────────────────────────────
@@ -66,5 +67,6 @@ class AppMenu:
         # ── Histogramy ────────────────────────────────────────────
         histogram_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Histogramy", menu=histogram_menu)
+        histogram_menu.add_command(label="Histogram", command=self.cb.get("histogram"))
 
 

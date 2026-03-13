@@ -29,7 +29,7 @@ class History:
         """Zapisz nowy stan (wywołuj przed każdą modyfikacją obrazu)."""
         self._stack.append(image.copy())
         if len(self._stack) > MAX_HISTORY:
-            self._stack.pop(0)   # usuń najstarszy stan
+            self._stack.pop(0)   
 
     def undo(self) -> Optional[Image.Image]:
         """

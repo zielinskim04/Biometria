@@ -34,6 +34,8 @@ class AppMenu:
         edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Edycja", menu=edit_menu)
         edit_menu.add_command(label="Cofnij             Ctrl+Z",       command=self.cb.get("undo"))
+        edit_menu.add_command(label="Ponów",                          command=self.cb.get("reset"))  
+    
         #edit_menu.add_separator()
 
         # ── Filtry ────────────────────────────────────────────
@@ -51,6 +53,7 @@ class AppMenu:
         filter_menu.add_command(label="Filtr uśredniający", command=self.cb.get("avg_filter"))
         filter_menu.add_command(label="Filtr Gaussa",       command=self.cb.get("gauss_filter"))
         filter_menu.add_command(label="Filtr wyostrzający", command=self.cb.get("sharpen_filter"))
+        filter_menu.add_command(label="Własny filtr",        command=self.cb.get("custom_filter"))
         filter_menu.add_command(label="Krzyż Robertsa", command=self.cb.get("roberts_cross"))
         filter_menu.add_command(label="Operator Prewitta", command=self.cb.get("prewitt_operator"))
         filter_menu.add_command(label="Operator Sobela", command=self.cb.get("sobel_operator"))

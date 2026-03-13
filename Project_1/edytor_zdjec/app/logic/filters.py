@@ -4,7 +4,6 @@ import numpy as np
 class Filters:
 
     # Filtry
-
     def convert_to_gray_avg(self, image: Image.Image) -> Image.Image:
         img = np.array(image)
         rows, cols = img.shape[:2]
@@ -56,7 +55,7 @@ class Filters:
         return Image.fromarray(result)
 
     def average_filter(self, image, size=3):
-        """Filtr uśredniający – każdy piksel = średnia z otoczenia"""
+        """Filtr uśredniający, gdzie wielkość kernela jest wybierana"""
         img = np.array(image).astype('float32')
         pad = size // 2
         result = np.zeros_like(img)
@@ -65,16 +64,16 @@ class Filters:
             for j in range(img.shape[1]):
                 result[i,j] = np.mean(padded[i:i+size, j:j+size], axis=(0,1))
         return Image.fromarray(result.astype('uint8'))
+    
 
     def gaussian_filter(self, image, size=3, sigma=1.0):
-        """Filtr Gaussa – ważona średnia z otoczenia"""
-        # Generuj jądro Gaussa ręcznie
+        """Filtr Gaussa, gdzie wielkość kernela jest wybierana"""
         kernel = np.zeros((size, size))
         center = size // 2
         for x in range(size):
             for y in range(size):
                 kernel[x,y] = np.exp(-((x-center)**2 + (y-center)**2) / (2*sigma**2))
-        kernel /= kernel.sum()  # normalizacja
+        kernel /= kernel.sum()  
 
         img = np.array(image).astype('float32')
         pad = size // 2
@@ -85,12 +84,24 @@ class Filters:
                 for c in range(3):
                     result[i,j,c] = np.sum(padded[i:i+size, j:j+size, c] * kernel)
         return Image.fromarray(result.astype('uint8'))
-
-    def sharpen_filter(self, image: Image.Image):
-        """Filtr wyostrzający – jądro z ujemnymi wagami wokół centrum"""
-        kernel = np.array([[ 0, -1,  0],
-                        [-1,  5, -1],
-                        [ 0, -1,  0]], dtype='float32')
+    
+    def sharpen_filter(self, image, preset="mean_removal"):
+        """Na podstawie: http://www.algorytm.org/przetwarzanie-obrazow/filtrowanie-obrazow.html"""
+        kernels = {
+            "mean_removal": np.array([[ -1, -1,  -1],
+                            [-1,  9, -1],
+                            [ -1, -1,  -1]], dtype='float32'),
+            "HP1": np.array([[ 0, -1,  0],
+                            [-1,  5, -1],
+                            [ 0, -1,  0]], dtype='float32'),
+            "HP2": np.array([[1, -2, 1],
+                            [-2,  5, -2],
+                            [1, -2, 1]], dtype='float32'),
+            "HP3": np.array([[ 0, -1,  0],
+                            [-1,  20, -1],
+                            [ 0, -1,  0]], dtype='float32'),
+        }
+        kernel = kernels.get(preset, kernels["mean_removal"])
         img = np.array(image).astype('float32')
         result = np.zeros_like(img)
         padded = np.pad(img, ((1,1),(1,1),(0,0)), mode='edge')
@@ -98,8 +109,7 @@ class Filters:
             for j in range(img.shape[1]):
                 for c in range(3):
                     result[i,j,c] = np.sum(padded[i:i+3, j:j+3, c] * kernel)
-        result = np.clip(result, 0, 255)
-        return Image.fromarray(result.astype('uint8'))
+        return Image.fromarray(np.clip(result, 0, 255).astype('uint8'))
     
     def roberts_cross(self, image) -> Image.Image:
         img_gray = np.array(self.convert_to_gray_avg(image)) 
@@ -121,7 +131,6 @@ class Filters:
         return Image.fromarray(result.astype('uint8')).convert("RGB")
     
     def prewitt_operator(self, image: Image.Image) -> Image.Image:
-        # SPRAWDZ CZY JA DOBRZE ROZUMIEM SLAJD Z TEGO BO MAM WATPLIWOSCI slajd 131
         img_gray = np.array(self.convert_to_gray_avg(image))
         img = img_gray[:, :, 0].astype('float32')
         rows, cols = img.shape
@@ -172,6 +181,27 @@ class Filters:
 
         result = np.clip(result, 0, 255).astype('uint8')
         return Image.fromarray(result, mode='L').convert("RGB")
+
+    def custom_filter(self, image, kernel: np.ndarray):
+        size = kernel.shape[0]
+        pad = size // 2
+        img = np.array(image).astype('float32')
+        result = np.zeros_like(img)
+
+        # Dla parzystych rozmiarów
+        pad_before = size // 2
+        pad_after  = size - pad_before - 1
+
+        padded = np.pad(img,
+                        ((pad_before, pad_after),
+                        (pad_before, pad_after),
+                        (0, 0)),
+                        mode='edge')
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                for c in range(3):
+                    result[i,j,c] = np.sum(padded[i:i+size, j:j+size, c] * kernel)
+        return Image.fromarray(np.clip(result, 0, 255).astype('uint8'))
 
     def compute_histogram(self, image: Image.Image):
         img = np.array(image)

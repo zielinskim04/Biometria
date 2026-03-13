@@ -2,19 +2,24 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 from PIL import Image, ImageTk
+import numpy as np
 
 
 class Sidebar:
     def __init__(self, parent: tk.Frame, callbacks: dict):
         self.cb = callbacks
-        self._thumbnail = None
+        self._thumbnail = None 
         self._build(parent)
-        self.threshold  = tk.IntVar(value=128)
-        self.brightness = tk.DoubleVar(value=1.0)
-        self.contrast   = tk.DoubleVar(value=1.0)
+        self.threshold  = tk.IntVar(value=128) # Do binaryzacji
+        self.brightness = tk.DoubleVar(value=1.0) # Do jasności
+        self.contrast   = tk.DoubleVar(value=1.0) # Do kontrastu
+        self.sigma       = tk.DoubleVar(value=1.0) #Do filtru Gaussa
+        self.filter_size = tk.IntVar(value=3)       # Rozmiar kernela 3/5/7
+        self.sharpen_preset = tk.StringVar(value="mean_removal") # Preset dla filtru wyostrzającego
+        self.custom_kernel_entries = [] # Lista Entry dla własnego kernela
 
     def _build(self, parent):
-        self._frame = tk.Frame(parent, width=220, bg="#f0f0f0",
+        self._frame = tk.Frame(parent, width=250, bg="#f0f0f0",
                                relief=tk.SUNKEN, bd=1)
         self._frame.pack_propagate(False)
 
@@ -48,7 +53,7 @@ class Sidebar:
                   bg="#e53935", fg="white", relief=tk.FLAT,
                   padx=8, pady=4).pack(fill=tk.X)
 
-        # Obszar dynamiczny – zdefiniuj ale nie pakuj
+        # Dynamiczna część, która zmienia się w zależności od aktywnego filtra
         self._dynamic = tk.Frame(self._frame, bg="#f0f0f0")
 
     # ── Widoczność ────────────────────────────────────────────
@@ -80,6 +85,7 @@ class Sidebar:
         "avg_filter": "Filtr uśredniający",
         "gauss_filter": "Filtr Gaussa",
         "sharpen_filter": "Filtr wyostrzający",
+        "custom_filter": "Własny filtr",
         "roberts_cross": "Krzyż Robertsa",
         "prewitt_operator": "Operator Prewitta",
         "sobel_operator": "Operator Sobela",
@@ -98,7 +104,15 @@ class Sidebar:
             self._make_slider("Jasność", self.brightness, 0.0, 3.0, 0.05)
         elif mode == "contrast":
             self._make_slider("Kontrast", self.contrast, 0.0, 3.0, 0.05)
-
+        elif mode == "avg_filter":
+            self._make_size_slider()
+        elif mode == "gauss_filter":
+            self._make_size_slider()
+            self._make_slider("Sigma", self.sigma, 0.1, 5.0, 0.1)
+        elif mode == "sharpen_filter":
+            self._make_preset_selector()
+        elif mode == "custom_filter":
+            self._make_custom_kernel()
 
         elif mode == "histogram":
             self._btn_frame.pack_forget()
@@ -201,7 +215,7 @@ class Sidebar:
         # Sprawdzamy czy jest szary
         is_gray = (list(hist_data['R']) == list(hist_data['G']) == list(hist_data['B']))
 
-        w, h = 200, 60
+        w, h = 230, 70
         margin_x = 10
         draw_w = w - 2 * margin_x
 
@@ -258,7 +272,7 @@ class Sidebar:
 
     def update_thumbnail(self, image: Image.Image):
         thumb = image.copy()
-        thumb.thumbnail((200, 150))
+        thumb.thumbnail((230, 160))
         self._thumbnail = ImageTk.PhotoImage(thumb)
         self._thumb_label.config(image=self._thumbnail)
 
@@ -268,6 +282,7 @@ class Sidebar:
         for w in self._dynamic.winfo_children():
             w.destroy()
 
+    # Slider do binaryzacji, jasności, kontrastu i sigma dla Gaussa
     def _make_slider(self, label, variable, from_, to, resolution):
         tk.Label(self._dynamic, text=label, bg="#f0f0f0",
                  font=("Helvetica", 9, "bold"), anchor=tk.W).pack(fill=tk.X)
@@ -287,3 +302,96 @@ class Sidebar:
                  variable=variable, orient=tk.HORIZONTAL,
                  showvalue=False, command=on_change
                  ).pack(fill=tk.X)
+        
+    # Slider do wyboru rozmiaru kernela dla filtrów uśredniającego i Gaussa    
+    def _make_size_slider(self):
+        """Suwak rozmiaru kernela: 3, 5, 7."""
+        tk.Label(self._dynamic, text="Rozmiar kernela",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W).pack(fill=tk.X)
+
+        btn_frame = tk.Frame(self._dynamic, bg="#f0f0f0")
+        btn_frame.pack(fill=tk.X, pady=4)
+
+        for size in [3, 5, 7]:
+            tk.Radiobutton(btn_frame, text=f"{size}×{size}",
+                        variable=self.filter_size, value=size,
+                        bg="#f0f0f0", command=lambda: self.cb.get("preview") and self.cb.get("preview")()
+                        ).pack(side=tk.LEFT, padx=4)
+            
+    # Preset dla filtru wyostrzającego        
+    def _make_preset_selector(self):
+        """Selector dla presetów filtru wyostrzającego."""
+        tk.Label(self._dynamic, text="Preset wyostrzania",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W).pack(fill=tk.X)
+
+        presets = {
+        "mean_removal": "Mean Removal",
+        "HP1": "HP1",
+        "HP2": "HP2",
+        "HP3": "HP3",
+        }
+        for key, label in presets.items():
+            tk.Radiobutton(self._dynamic, text=label,
+                        variable=self.sharpen_preset, value=key,
+                        bg="#f0f0f0",
+                        command=lambda: self.cb.get("preview") and self.cb.get("preview")()
+                        ).pack(anchor=tk.W, padx=4)
+            
+    #-------- Własny kernel --------        
+    def _make_custom_kernel(self):
+        tk.Label(self._dynamic, text="Rozmiar siatki",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W).pack(fill=tk.X, pady=(0, 4))
+
+        # Selector rozmiaru
+        size_frame = tk.Frame(self._dynamic, bg="#f0f0f0")
+        size_frame.pack(fill=tk.X, pady=(0, 6))
+
+        self.custom_size = tk.IntVar(value=3)
+
+        for s in [2, 3, 4, 5, 6, 7]:
+            tk.Radiobutton(size_frame, text=str(s), variable=self.custom_size,
+                        value=s, bg="#f0f0f0",
+                        command=self._rebuild_custom_grid
+                        ).pack(side=tk.LEFT, padx=2)
+
+        tk.Label(self._dynamic, text="Wagi kernela",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W).pack(fill=tk.X, pady=(0, 4))
+
+        # Ramka na siatkę 
+        self._grid_frame = tk.Frame(self._dynamic, bg="#f0f0f0")
+        self._grid_frame.pack()
+
+        self.custom_kernel_entries = []
+        self._build_custom_grid(3)   
+
+        tk.Button(self._dynamic, text="Podgląd",
+                command=lambda: self.cb.get("preview") and self.cb.get("preview")(),
+                relief=tk.FLAT, bg="#2196F3", fg="white",
+                padx=6, pady=2).pack(pady=(6, 0))
+
+    def _build_custom_grid(self, size: int):
+        for w in self._grid_frame.winfo_children():
+            w.destroy()
+        self.custom_kernel_entries = []
+
+        for i in range(size):
+            for j in range(size):
+                default = 1 if (i == size//2 and j == size//2) else 0
+                e = tk.Entry(self._grid_frame, width=4, justify=tk.CENTER,
+                            font=("Helvetica", 9))
+                e.insert(0, str(default))
+                e.grid(row=i, column=j, padx=1, pady=1)
+                self.custom_kernel_entries.append(e)
+
+    def _rebuild_custom_grid(self):
+        """Przebudowuje siatkę gdy zmieni się rozmiar."""
+        self._build_custom_grid(self.custom_size.get())
+
+    def get_custom_kernel(self):
+        size = self.custom_size.get()
+        vals = [float(e.get()) for e in self.custom_kernel_entries]
+        return np.array(vals, dtype='float32').reshape(size, size)

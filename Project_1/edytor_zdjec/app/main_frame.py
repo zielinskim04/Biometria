@@ -66,15 +66,17 @@ class MainFrame:
             "save_as": self._save_as,
             "quit":    self.root.quit,
             "undo":    self._undo,
+            "reset": self._reset_to_original,
             "gray_avg":   self._gray_avg,
             "gray_human": self._gray_human,
             "negative":   self._negative,
             "binarize":   self._set_filter_binarize,    
             "brightness": self._set_filter_brightness,
             "contrast":   self._set_filter_contrast,
-            "avg_filter":    self._avg_filter,
-            "gauss_filter":  self._gauss_filter,
-            "sharpen_filter": self._sharpen_filter,
+            "avg_filter":     self._set_filter_avg,
+            "gauss_filter":   self._set_filter_gauss,
+            "sharpen_filter": self._set_filter_sharpen,
+            "custom_filter":  self._set_filter_custom,
             "show_info": self._show_info,
             "roberts_cross": self._roberts_cross,
             "prewitt_operator": self._prewitt_operator,
@@ -131,6 +133,17 @@ class MainFrame:
             self.sidebar.set_idle()
             self.status_bar.set_text("Cofnięto.")
 
+    def _reset_to_original(self):
+        if self._original is None:
+            return
+        self.history.reset(self._original)
+        self._preview_base = self._original.copy()
+        self._pending_result = None
+        self.active_filter = None
+        self.canvas.show(self._original)
+        self.sidebar.set_idle()
+        self.status_bar.set_text("Przywrócono oryginał.")
+
     def _cancel(self):
         if self._preview_base is None:
             return
@@ -141,6 +154,7 @@ class MainFrame:
         self.status_bar.set_text("Anulowano.")
 
     def _preview(self):
+        """Dla filtrów z suwakiem."""
         if self._preview_base is None or self.active_filter is None:
             return
         if self.active_filter == "binarize":
@@ -152,6 +166,23 @@ class MainFrame:
         elif self.active_filter == "contrast":
             result = self.filters.contrast(self._preview_base,
                         float(self.sidebar.contrast.get()))
+        elif self.active_filter == "avg_filter":
+            result = self.filters.average_filter(self._preview_base,
+                        int(self.sidebar.filter_size.get()))
+        elif self.active_filter == "gauss_filter":
+            result = self.filters.gaussian_filter(self._preview_base,
+                        int(self.sidebar.filter_size.get()),
+                        float(self.sidebar.sigma.get()))
+        elif self.active_filter == "sharpen_filter":
+            result = self.filters.sharpen_filter(self._preview_base,
+                        self.sidebar.sharpen_preset.get())
+        elif self.active_filter == "custom_filter":
+            try:
+                kernel = self.sidebar.get_custom_kernel()
+                result = self.filters.custom_filter(self._preview_base, kernel)
+            except ValueError:
+                self.status_bar.set_text("Błąd: wpisz liczby w kernelu.")
+                return
         else:
             return
         self._pending_result = result
@@ -189,15 +220,6 @@ class MainFrame:
 
     def _negative(self):
         self._apply_one_click(self.filters.negative, "negative")
-
-    def _avg_filter(self):
-        self._apply_one_click(self.filters.average_filter, "avg_filter")
-
-    def _gauss_filter(self):
-        self._apply_one_click(self.filters.gaussian_filter, "gauss_filter")
-
-    def _sharpen_filter(self):
-        self._apply_one_click(self.filters.sharpen_filter, "sharpen_filter")
 
     def _roberts_cross(self):
         self._apply_one_click(self.filters.roberts_cross, "roberts_cross")
@@ -241,7 +263,34 @@ class MainFrame:
         self.sidebar.show_filter_controls("contrast")   
         self._preview()
 
-    # Info o obrazie    
+    def _set_filter_avg(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "avg_filter"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("avg_filter")
+        self._preview()
+
+    def _set_filter_gauss(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "gauss_filter"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("gauss_filter")
+        self._preview()
+
+    def _set_filter_sharpen(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "sharpen_filter"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("sharpen_filter")
+        self._preview()
+
+    def _set_filter_custom(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "custom_filter"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("custom_filter")
+
+    # ── Info o obrazie ───────────────────────────────   
     def _show_info(self):
         current = self.history.current()
         if current is None:

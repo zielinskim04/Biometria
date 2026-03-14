@@ -202,7 +202,149 @@ class Filters:
                 for c in range(3):
                     result[i,j,c] = np.sum(padded[i:i+size, j:j+size, c] * kernel)
         return Image.fromarray(np.clip(result, 0, 255).astype('uint8'))
+    
 
+    # ── Operacje morfologiczne ────────────────────────────────────────────
+
+    def _get_structuring_element(self, size: int, shape: str) -> np.ndarray:
+        """
+        Generuje element strukturyzujący.
+        shape: 'rect' | 'cross' | 'ellipse' |'horizontal' | 'vertical'
+
+        Na podstawie https://echoslayer.github.io/Digital-Image-Processing/Books/%E6%95%B8%E4%BD%8D%E5%BD%B1%E5%83%8F%E8%99%95%E7%90%86/PDF/Rafael-C.-Gonzalez,-Richard-E.-Woods---Digital-Image-Processing-Pearson-(2007).
+        
+        Rozdzial 9
+        """
+        se = np.zeros((size, size), dtype=np.uint8)
+        center = size // 2
+
+        if shape == 'rect':
+            se[:] = 1
+
+        elif shape == 'cross':
+            se[center, :] = 1
+            se[:, center] = 1
+
+        elif shape == 'ellipse':
+            for i in range(size):
+                for j in range(size):
+                    # równanie elipsy
+                    if ((i - center)**2 + (j - center)**2) <= center**2:
+                        se[i, j] = 1
+
+        
+        elif shape == 'horizontal':
+            se[center, :] = 1      
+
+        elif shape == 'vertical':
+            se[:, center] = 1    
+    
+        return se
+
+    # W przeciwieństwie do istniejącyh już fukcji poszarzających, ta funkcja zwraca obraz w odcieniach szarości, a nie RGB. Potrzebują tego operacje morfologiczne.
+    def _to_gray(self, image: Image.Image) -> np.ndarray:
+        """Konwertuje do grayscale numpy."""
+        return np.array(image.convert('L'))
+
+    def _erode(self, img: np.ndarray, se: np.ndarray) -> np.ndarray:
+        """Erozja – minimum w oknie SE."""
+        size = se.shape[0]
+        pad  = size // 2
+        padded = np.pad(img, pad, mode='edge')
+        result = np.zeros_like(img)
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                region = padded[i:i+size, j:j+size]
+                result[i, j] = np.min(region[se == 1])
+        return result
+
+    def _dilate(self, img: np.ndarray, se: np.ndarray) -> np.ndarray:
+        """Dylatacja – maksimum w oknie SE."""
+        size = se.shape[0]
+        pad  = size // 2
+        padded = np.pad(img, pad, mode='edge')
+        result = np.zeros_like(img)
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                region = padded[i:i+size, j:j+size]
+                result[i, j] = np.max(region[se == 1])
+        return result
+
+    def erosion(self, image: Image.Image, size: int = 3, shape: str = 'rect') -> Image.Image:
+        """Erozja – ściera jasne obszary, pogrubia ciemne."""
+        se  = self._get_structuring_element(size, shape)
+        img = self._to_gray(image)
+        result = self._erode(img, se)
+        return Image.fromarray(result).convert('RGB')
+
+    def dilation(self, image: Image.Image, size: int = 3, shape: str = 'rect') -> Image.Image:
+        """Dylatacja – rozszerza jasne obszary."""
+        se  = self._get_structuring_element(size, shape)
+        img = self._to_gray(image)
+        result = self._dilate(img, se)
+        return Image.fromarray(result).convert('RGB')
+
+    def opening(self, image: Image.Image, size: int = 3, shape: str = 'rect') -> Image.Image:
+        """Otwarcie = erozja → dylatacja. Usuwa małe jasne obiekty."""
+        se  = self._get_structuring_element(size, shape)
+        img = self._to_gray(image)
+        result = self._dilate(self._erode(img, se), se)
+        return Image.fromarray(result).convert('RGB')
+
+    def closing(self, image: Image.Image, size: int = 3, shape: str = 'rect') -> Image.Image:
+        """Zamknięcie = dylatacja → erozja. Wypełnia małe dziury."""
+        se  = self._get_structuring_element(size, shape)
+        img = self._to_gray(image)
+        result = self._erode(self._dilate(img, se), se)
+        return Image.fromarray(result).convert('RGB')
+    
+    def top_hat(self, image, size=3, shape='rect'):
+        se = self._get_structuring_element(size, shape)
+        img = self._to_gray(image).astype('int16')
+        opened = self._dilate(self._erode(img.astype('uint8'), se), se).astype('int16')
+        result = np.clip(img - opened, 0, 255).astype('uint8')
+        return Image.fromarray(result).convert('RGB')
+
+    def black_hat(self, image, size=3, shape='rect'):
+        se = self._get_structuring_element(size, shape)
+        img = self._to_gray(image).astype('int16')
+        closed = self._erode(self._dilate(img.astype('uint8'), se), se).astype('int16')
+        result = np.clip(closed - img, 0, 255).astype('uint8')
+        return Image.fromarray(result).convert('RGB')
+    
+    def skeletonize(self, image: Image.Image) -> Image.Image:
+    
+        se = self._get_structuring_element(3, 'cross')
+
+        gray = self.convert_to_gray_avg(image)
+        img  = np.array(gray.convert('L'))
+        current = (img > 128).astype(np.uint8) * 255
+
+        skeleton = np.zeros_like(current)
+
+        while True:
+            # 1. Erozja
+            eroded = self._erode(current, se)
+
+            # 2. Otwarcie = dylatacja zerodowanego
+            opened = self._dilate(eroded, se)
+
+            # 3. Różnica: current - opened
+            temp = np.clip(current.astype(np.int16) - opened.astype(np.int16),
+                        0, 255).astype(np.uint8)
+
+            # 4. Dodaj do szkieletu (OR)
+            skeleton = np.maximum(skeleton, temp)
+
+            # 5. Aktualizacja – pracujemy na zerodowanym
+            current = eroded
+
+            if np.max(current) == 0:
+                break
+
+        return Image.fromarray(skeleton).convert('RGB')
+
+    # ── Histogram ────────────────────────────────────────────
     def compute_histogram(self, image: Image.Image):
         img = np.array(image)
         # print(f"DEBUG: Kształt obrazu to: {img.shape}")
@@ -226,12 +368,28 @@ class Filters:
         result = lut[img]
         return Image.fromarray(result).convert('RGB')
     
-    def compute_projections(self, image):
-        img = np.array(self.convert_to_gray_avg(image))
+    # def compute_projections(self, image):
+    #     img = np.array(self.convert_to_gray_avg(image))
         
-        # axis=1 - suma wierszy (pozioma)
-        # axis=0 - suma kolumn (pionowa)
-        horizontal = np.sum(img, axis=1)
-        vertical = np.sum(img, axis=0)
+    #     # axis=1 - suma wierszy (pozioma)
+    #     # axis=0 - suma kolumn (pionowa)
+    #     horizontal = np.sum(img, axis=1)
+    #     vertical = np.sum(img, axis=0)
         
-        return horizontal, vertical
+    #     return horizontal, vertical
+
+    def projection_horizontal(self, image: Image.Image) -> np.ndarray:
+        """
+        Projekcja pozioma – suma jasności pikseli w każdym wierszu.
+        Zwraca tablicę długości = wysokość obrazu.
+        """
+        img = np.array(image.convert('L'))
+        return img.sum(axis=1)   # sumuj kolumny → zostają wiersze
+
+    def projection_vertical(self, image: Image.Image) -> np.ndarray:
+        """
+        Projekcja pionowa – suma jasności pikseli w każdej kolumnie.
+        Zwraca tablicę długości = szerokość obrazu.
+        """
+        img = np.array(image.convert('L'))
+        return img.sum(axis=0)

@@ -12,10 +12,12 @@ Schemat działania:
 """
 
 import tkinter as tk
+from tkinter import messagebox
+import os # dla show_info
+import numpy as np
 from app.ui.menu       import AppMenu
 from app.ui.canvas     import ImageCanvas
 from app.ui.sidebar    import Sidebar
-from app.ui.status_bar import StatusBar
 from app.logic.file    import FileHandler
 from app.logic.history import History
 from app.logic.filters import Filters
@@ -38,8 +40,7 @@ class MainFrame:
 
         # ── UI ────────────────────────────────────────────────
         self.menu       = AppMenu(root,     callbacks=self._menu_callbacks())
-        # self.toolbar    = Toolbar(root,     callbacks=self._toolbar_callbacks())
-        self.status_bar = StatusBar(root)
+        
 
         # Środkowa część okna: canvas + sidebar obok siebie
         main_area = tk.Frame(root)
@@ -83,6 +84,13 @@ class MainFrame:
             "sobel_operator": self._sobel_operator,
             "histogram": self._on_histogram_click,
             "equalize_histogram": self._equalize_histogram,
+            "erosion":  self._set_filter_erosion,
+            "dilation": self._set_filter_dilation,
+            "opening":  self._set_filter_opening,
+            "closing":  self._set_filter_closing,
+            "top_hat": self._set_filter_top_hat,
+            "black_hat": self._set_filter_black_hat,
+            "skeletonize": self._set_filter_skeletonize,
         }
 
 
@@ -111,18 +119,15 @@ class MainFrame:
             self.sidebar.update_thumbnail(image)   
             self.sidebar.set_idle()
             self.sidebar.show()
-            self.status_bar.set_info(image, self.file.path)
-
+        
     def _save(self):
         image = self.history.current()
         self.file.save(image)
-        self.status_bar.set_text(f"Zapisano: {self.file.path}")
-
+        
     def _save_as(self):
         image = self.history.current()
         self.file.save_as(image)
-        self.status_bar.set_text(f"Zapisano jako: {self.file.path}")
-
+        
     def _undo(self):
         image = self.history.undo()
         if image:
@@ -131,7 +136,6 @@ class MainFrame:
             self.active_filter = None
             self.canvas.show(image)
             self.sidebar.set_idle()
-            self.status_bar.set_text("Cofnięto.")
 
     def _reset_to_original(self):
         if self._original is None:
@@ -142,7 +146,6 @@ class MainFrame:
         self.active_filter = None
         self.canvas.show(self._original)
         self.sidebar.set_idle()
-        self.status_bar.set_text("Przywrócono oryginał.")
 
     def _cancel(self):
         if self._preview_base is None:
@@ -151,7 +154,6 @@ class MainFrame:
         self.active_filter = None
         self.canvas.show(self._preview_base)
         self.sidebar.set_idle()
-        self.status_bar.set_text("Anulowano.")
 
     def _preview(self):
         """Dla filtrów z suwakiem."""
@@ -181,8 +183,15 @@ class MainFrame:
                 kernel = self.sidebar.get_custom_kernel()
                 result = self.filters.custom_filter(self._preview_base, kernel)
             except ValueError:
-                self.status_bar.set_text("Błąd: wpisz liczby w kernelu.")
+                messagebox.showwarning("Błąd kernela","Wszystkie pola kernela muszą zawierać liczby!")
                 return
+        elif self.active_filter in ("erosion", "dilation", "opening", "closing", "top_hat", "black_hat"):
+            size  = int(self.sidebar.morph_size.get())
+            shape = self.sidebar.morph_shape.get()
+            fn = getattr(self.filters, self.active_filter)
+            result = fn(self._preview_base, size, shape)
+        elif self.active_filter == "skeletonize":
+            result = self.filters.skeletonize(self._preview_base)
         else:
             return
         self._pending_result = result
@@ -197,7 +206,6 @@ class MainFrame:
         self.active_filter = None
         self.canvas.show(self._preview_base)
         self.sidebar.set_idle()
-        self.status_bar.set_text("Zastosowano zmiany.")
 
     def _apply_one_click(self, filter_fn, label):
         """Dla filtrów bez suwaka."""
@@ -210,7 +218,6 @@ class MainFrame:
         self._pending_result = result              
         self.canvas.show(result)
         self.sidebar.show_filter_controls(label)  
-        self.status_bar.set_text(f"Podgląd: {label} – Zatwierdź lub Anuluj")
 
     def _gray_avg(self):
         self._apply_one_click(self.filters.convert_to_gray_avg, "gray_avg")
@@ -292,8 +299,63 @@ class MainFrame:
 
     # ── Info o obrazie ───────────────────────────────   
     def _show_info(self):
+        
         current = self.history.current()
         if current is None:
             self.status_bar.set_text("Brak obrazu.")
             return
-        self.sidebar.show_info(current, self.file.path)
+
+        img_np = np.array(current.convert('L'))
+        w, h   = current.size
+
+        # Rozmiar pliku
+        if self.file.path and os.path.exists(self.file.path):
+            file_bytes = os.path.getsize(self.file.path)
+            if file_bytes < 1024 * 1024:
+                file_size = f"{file_bytes / 1024:.1f} KB"
+            else:
+                file_size = f"{file_bytes / (1024*1024):.2f} MB"
+        else:
+            file_size = "—"
+
+        # Głębia koloru
+        depth_map = {"RGB": "24-bit", "RGBA": "32-bit", "L": "8-bit",
+                    "1": "1-bit", "P": "8-bit (paleta)"}
+        depth = depth_map.get(current.mode, "—")
+
+        info = {
+            "Plik":         os.path.basename(self.file.path) if self.file.path else "—",
+            "Ścieżka":      self.file.path or "—",
+            "Rozmiar":      f"{w} × {h} px",
+            "Rozmiar pliku":file_size,
+            "Tryb":         current.mode,
+            "Głębia":       depth,
+            "Min jasność":  f"{img_np.min()}",
+            "Max jasność":  f"{img_np.max()}",
+            "Śr. jasność":  f"{img_np.mean():.1f}",
+            "Odch. std":    f"{img_np.std():.1f}",
+        }
+
+        self.sidebar.show_info(info)
+        self.sidebar.show()
+
+    # ── Operacje morfologiczne ───────────────────────────────   
+    def _set_morph_filter(self, name: str):
+        """Wspólny schemat dla filtrów morfologicznych."""
+        self._preview_base = self.history.current()
+        self.active_filter = name
+        self._pending_result = None
+        self.sidebar.show_filter_controls(name)
+        self._preview()
+
+    def _set_filter_erosion(self):  self._set_morph_filter("erosion")
+    def _set_filter_dilation(self): self._set_morph_filter("dilation")
+    def _set_filter_opening(self):  self._set_morph_filter("opening")
+    def _set_filter_closing(self):  self._set_morph_filter("closing")
+    def _set_filter_top_hat(self):  self._set_morph_filter("top_hat")
+    def _set_filter_black_hat(self):  self._set_morph_filter("black_hat")
+    def _set_filter_skeletonize(self):
+        self._apply_one_click(self.filters.skeletonize, "skeletonize")
+    
+
+    

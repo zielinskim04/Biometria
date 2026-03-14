@@ -17,6 +17,8 @@ class Sidebar:
         self.filter_size = tk.IntVar(value=3)       # Rozmiar kernela 3/5/7
         self.sharpen_preset = tk.StringVar(value="mean_removal") # Preset dla filtru wyostrzającego
         self.custom_kernel_entries = [] # Lista Entry dla własnego kernela
+        self.morph_size  = tk.IntVar(value=3) # Rozmiar elementu strukturyzującego (operacje morfologiczne)
+        self.morph_shape = tk.StringVar(value="rect") # Kształt eleentu struktuzyjącego (operacje morfologiczne)
 
     def _build(self, parent):
         self._frame = tk.Frame(parent, width=250, bg="#f0f0f0",
@@ -74,7 +76,7 @@ class Sidebar:
         self._clear_dynamic()
 
     def show_filter_controls(self, mode: str):
-        """Suwak v przyciski."""
+        """Suwak lub przyciski."""
         titles = {
         "binarize":  "Binaryzacja",
         "brightness": "Jasność",
@@ -90,7 +92,14 @@ class Sidebar:
         "prewitt_operator": "Operator Prewitta",
         "sobel_operator": "Operator Sobela",
         "histogram": "Histogram",
-        "equalize_histogram": "Wyrównanie histogramu"
+        "equalize_histogram": "Wyrównanie histogramu",
+        "erosion":  "Erozja", #operacje morfologiczne
+        "dilation": "Dylatacja",
+        "opening":  "Otwarcie",
+        "closing":  "Zamknięcie",
+        "top_hat": "Top Hat",
+        "black_hat": "Black Hat",
+        "skeletonize": "Szkieletowanie",
         }
 
         self._title.config(text=titles.get(mode, "Edytor"))
@@ -138,13 +147,20 @@ class Sidebar:
 
             self._close_btn = tk.Button(self._dynamic, text="Zamknij", 
                       command=self.set_idle, bg="#9e9e9e", fg="white")
+
+        elif mode in ("erosion", "dilation", "opening", "closing", "top_hat", "black_hat"):
+            self._make_morphology_controls() 
+        elif mode == "skeletonize":
+            self._set_filter_skeletonize() #Morfologiczna, ale bez ustawien
+        
+
+        
+        # elif mode == "projections":
+        #     self._btn_frame.pack_forget()
+        #     info = [("H", "Projekcja pozioma"),
+        #             ('V', 'Projekcja pionowa')]
             
-        elif mode == "projections":
-            self._btn_frame.pack_forget()
-            info = [("H", "Projekcja pozioma"),
-                    ('V', 'Projekcja pionowa')]
-            
-            # DO dokonczenia
+        #     # DO dokonczenia
 
         else:
             tk.Label(self._dynamic,
@@ -154,60 +170,26 @@ class Sidebar:
                      ).pack(pady=8)
 
 
-    def show_info(self, image: Image.Image, path: Optional[str] = None):
-        """Informacje o obrazie, bez przycisków."""
+    def show_info(self, info: dict):
         self._title.config(text="Informacje")
         self._clear_dynamic()
         self._btn_frame.pack_forget()
         self._dynamic.pack(side=tk.TOP, fill=tk.X, padx=10, pady=8)
 
-        w, h = image.size
-        name = path.split("/")[-1] if path else "—"
-        tk.Label(self._dynamic,
-                 text=f"Plik:       {name}\n"
-                      f"Rozmiar: {w} × {h} px\n"
-                      f"Piksele:  {w * h:,}",
-                 bg="#f0f0f0", font=("Helvetica", 9), justify=tk.LEFT
-                 ).pack(anchor=tk.W)
+        for label, value in info.items():
+            row = tk.Frame(self._dynamic, bg="#f0f0f0")
+            row.pack(fill=tk.X, pady=1)
+
+            tk.Label(row, text=f"{label}:", bg="#f0f0f0",
+                    font=("Helvetica", 8, "bold"),
+                    anchor=tk.W, width=14).pack(side=tk.LEFT)
+
+            tk.Label(row, text=value, bg="#f0f0f0",
+                    font=("Helvetica", 8),
+                    anchor=tk.W, wraplength=120,
+                    justify=tk.LEFT).pack(side=tk.LEFT, fill=tk.X)
         
-
-# jeden histogram
-    # def update_histogram_plot(self, hist_data: dict):
-    #     if not hasattr(self, '_hist_canvas'): return
-    #     self._hist_canvas.delete("all")
-        
-    #     w, h = 200, 100
-    #     margin_x = 15  # Odrobinę większy margines na tekst
-    #     margin_y = 15  # Miejsce na napisy pod spodem
-    #     draw_w = w - 2 * margin_x
-    #     draw_h = h - margin_y - 5 # -5 dla odstępu od góry
-
-    #     max_v = max(max(hist_data['R']), max(hist_data['G']), max(hist_data['B']), 1)
-    #     is_gray = (list(hist_data['R']) == list(hist_data['G']) == list(hist_data['B']))
-
-    #     # 1. Rysujemy oś poziomą (podstawę), żeby było wiadomo gdzie jest 0-255
-    #     self._hist_canvas.create_line(margin_x, draw_h, margin_x + draw_w, draw_h, fill="#666666")
-
-    #     # 2. Dodajemy napisy 0 i 255
-    #     self._hist_canvas.create_text(margin_x, draw_h + 8, text="0", fill="#888888", font=("Arial", 7))
-    #     self._hist_canvas.create_text(margin_x + draw_w, draw_h + 8, text="255", fill="#888888", font=("Arial", 7))
-
-    #     # 3. Rysujemy dane
-    #     for i in range(256):
-    #         x = margin_x + (i / 255) * draw_w
-            
-    #         if is_gray:
-    #             val = (hist_data['R'][i] / max_v) * draw_h
-    #             if val > 0:
-    #                 # Rysujemy od dołu do góry względem naszej nowej osi draw_h
-    #                 self._hist_canvas.create_rectangle(x, draw_h, x + 1, draw_h - val, 
-    #                                                    fill="white", outline="white")
-    #         else:
-    #             for ch, col in [('R', '#ff4444'), ('G', '#44ff44'), ('B', '#4444ff')]:
-    #                 val = (hist_data[ch][i] / max_v) * draw_h
-    #                 if val > 0:
-    #                     self._hist_canvas.create_line(x, draw_h, x, draw_h - val, fill=col)
-
+    # ── Histogram ────────────────────────────────────────────────
 
     def update_histogram_plot(self, hist_data: dict):
         if not hasattr(self, '_channels'): return
@@ -250,7 +232,7 @@ class Sidebar:
         
         # Marginesy wewnątrz małego canvasu
         padding_top = 10
-        draw_h = h - 15  # Linia bazowa (oś)
+        draw_h = h - 15 
         available_h = draw_h - padding_top 
         
         max_v = max(data) if max(data) > 0 else 1
@@ -282,6 +264,7 @@ class Sidebar:
         for w in self._dynamic.winfo_children():
             w.destroy()
 
+    # ── Do filtrów ────────────────────────────────────────────────
     # Slider do binaryzacji, jasności, kontrastu i sigma dla Gaussa
     def _make_slider(self, label, variable, from_, to, resolution):
         tk.Label(self._dynamic, text=label, bg="#f0f0f0",
@@ -339,13 +322,12 @@ class Sidebar:
                         command=lambda: self.cb.get("preview") and self.cb.get("preview")()
                         ).pack(anchor=tk.W, padx=4)
             
-    #-------- Własny kernel --------        
+    # ── Własny kernel ────────────────────────────────────────────────       
     def _make_custom_kernel(self):
         tk.Label(self._dynamic, text="Rozmiar siatki",
                 bg="#f0f0f0", font=("Helvetica", 9, "bold"),
                 anchor=tk.W).pack(fill=tk.X, pady=(0, 4))
 
-        # Selector rozmiaru
         size_frame = tk.Frame(self._dynamic, bg="#f0f0f0")
         size_frame.pack(fill=tk.X, pady=(0, 6))
 
@@ -395,3 +377,45 @@ class Sidebar:
         size = self.custom_size.get()
         vals = [float(e.get()) for e in self.custom_kernel_entries]
         return np.array(vals, dtype='float32').reshape(size, size)
+    
+
+
+    # ── Operacje morfologiczne ────────────────────────────────────────────────  
+    def _make_morphology_controls(self):
+        """Rozmiar SE + kształt SE."""
+
+        # Rozmiar
+        tk.Label(self._dynamic, text="Rozmiar elementu strukturyzującego",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W, wraplength=190).pack(fill=tk.X)
+
+        self.morph_size = tk.IntVar(value=3)
+        size_frame = tk.Frame(self._dynamic, bg="#f0f0f0")
+        size_frame.pack(fill=tk.X, pady=4)
+        for s in [3, 5, 7, 9]:
+            tk.Radiobutton(size_frame, text=str(s), variable=self.morph_size,
+                        value=s, bg="#f0f0f0",
+                        command=lambda: self.cb.get("preview") and self.cb.get("preview")()
+                        ).pack(side=tk.LEFT, padx=4)
+
+        # Kształt
+        tk.Label(self._dynamic, text="Kształt elementu",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W).pack(fill=tk.X, pady=(8, 0))
+
+        self.morph_shape = tk.StringVar(value="rect")
+        shapes = [
+            ("Prostokąt",      "rect"),
+            ("Krzyż",          "cross"),
+            ("Elipsa",         "ellipse"),
+            ("Linia pozioma",  "horizontal"),
+            ("Linia pionowa",  "vertical"),
+        ]
+        for label, val in shapes:
+            tk.Radiobutton(self._dynamic, text=label,
+                        variable=self.morph_shape, value=val,
+                        bg="#f0f0f0",
+                        command=lambda: self.cb.get("preview") and self.cb.get("preview")()
+                        ).pack(anchor=tk.W, padx=4)
+
+    

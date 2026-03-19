@@ -13,6 +13,7 @@ class Sidebar:
         self.threshold  = tk.IntVar(value=128) # Do binaryzacji
         self.brightness = tk.DoubleVar(value=1.0) # Do jasności
         self.contrast   = tk.DoubleVar(value=1.0) # Do kontrastu
+        self.power_trans = tk.DoubleVar(value=1.0) # Do potęgowania
         self.sigma       = tk.DoubleVar(value=1.0) #Do filtru Gaussa
         self.filter_size = tk.IntVar(value=3)       # Rozmiar kernela 3/5/7
         self.sharpen_preset = tk.StringVar(value="mean_removal") # Preset dla filtru wyostrzającego
@@ -84,6 +85,8 @@ class Sidebar:
         "gray_avg":  "Skala szarości",
         "gray_human": "Skala szarości",
         "negative":  "Negatyw",
+        "power_trans": "Potęgowanie",
+        "log_trans": "Logarytmowanie",
         "avg_filter": "Filtr uśredniający",
         "gauss_filter": "Filtr Gaussa",
         "sharpen_filter": "Filtr wyostrzający",
@@ -113,6 +116,8 @@ class Sidebar:
             self._make_slider("Jasność", self.brightness, 0.0, 3.0, 0.05)
         elif mode == "contrast":
             self._make_slider("Kontrast", self.contrast, 0.0, 3.0, 0.05)
+        elif mode == "power_trans":
+            self._make_slider("Potęgowanie", self.power_trans, 0.0, 3.0, 0.05)
         elif mode == "avg_filter":
             self._make_size_slider()
         elif mode == "gauss_filter":
@@ -153,14 +158,6 @@ class Sidebar:
         elif mode == "skeletonize":
             self._set_filter_skeletonize() #Morfologiczna, ale bez ustawien
         
-
-        
-        # elif mode == "projections":
-        #     self._btn_frame.pack_forget()
-        #     info = [("H", "Projekcja pozioma"),
-        #             ('V', 'Projekcja pionowa')]
-            
-        #     # DO dokonczenia
 
         else:
             tk.Label(self._dynamic,
@@ -285,7 +282,8 @@ class Sidebar:
                  variable=variable, orient=tk.HORIZONTAL,
                  showvalue=False, command=on_change
                  ).pack(fill=tk.X)
-        
+
+        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1 
     # Slider do wyboru rozmiaru kernela dla filtrów uśredniającego i Gaussa    
     def _make_size_slider(self):
         """Suwak rozmiaru kernela: 3, 5, 7."""

@@ -21,6 +21,8 @@ from app.ui.sidebar    import Sidebar
 from app.logic.file    import FileHandler
 from app.logic.history import History
 from app.logic.filters import Filters
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
 class MainFrame:
@@ -71,7 +73,9 @@ class MainFrame:
             "gray_avg":   self._gray_avg,
             "gray_human": self._gray_human,
             "negative":   self._negative,
-            "binarize":   self._set_filter_binarize,    
+            "binarize":   self._set_filter_binarize,
+            "power_trans": self._set_filter_power,
+            "log_trans": self._log_trans,    
             "brightness": self._set_filter_brightness,
             "contrast":   self._set_filter_contrast,
             "avg_filter":     self._set_filter_avg,
@@ -91,6 +95,7 @@ class MainFrame:
             "top_hat": self._set_filter_top_hat,
             "black_hat": self._set_filter_black_hat,
             "skeletonize": self._set_filter_skeletonize,
+            "projections": self._projections
         }
 
 
@@ -168,6 +173,9 @@ class MainFrame:
         elif self.active_filter == "contrast":
             result = self.filters.contrast(self._preview_base,
                         float(self.sidebar.contrast.get()))
+        elif self.active_filter == "power_trans":
+            result = self.filters.power_trans(self._preview_base,
+                        float(self.sidebar.power_trans.get()))
         elif self.active_filter == "avg_filter":
             result = self.filters.average_filter(self._preview_base,
                         int(self.sidebar.filter_size.get()))
@@ -228,6 +236,9 @@ class MainFrame:
     def _negative(self):
         self._apply_one_click(self.filters.negative, "negative")
 
+    def _log_trans(self):
+        self._apply_one_click(self.filters.log_trans, "log_trans")
+
     def _roberts_cross(self):
         self._apply_one_click(self.filters.roberts_cross, "roberts_cross")
 
@@ -247,6 +258,39 @@ class MainFrame:
     
     def _equalize_histogram(self):
         self._apply_one_click(self.filters.equalize_histogram, "equalize_histogram")
+
+    def _projections(self):
+        current = self.history.current()
+        if current is None: return
+
+        horiz, vert = self.filters.compute_projections(current)
+        img_np = np.array(current.convert("L"))
+        h, w = img_np.shape
+
+        max_val = max(np.max(horiz), np.max(vert))
+
+        fig, ax_main = plt.subplots(figsize=(12, 10))
+        fig.canvas.manager.set_window_title("Analiza Projekcji - Dopasowanie do zdjęcia")
+
+        ax_main.imshow(img_np, cmap='gray', aspect='equal')
+        ax_main.axis('off')
+
+        divider = make_axes_locatable(ax_main)
+
+        ax_top = divider.append_axes("top", size="20%", pad=0.05, sharex=ax_main)
+        ax_top.bar(range(w), vert, color='black', width=1.0, align='edge')
+        ax_top.set_xlim(0, w)
+        ax_top.axis('off')
+
+        ax_right = divider.append_axes("right", size="20%", pad=0.05, sharey=ax_main)
+        ax_right.barh(range(h), horiz, color='black', height=1.0, align='edge')
+        ax_right.set_ylim(h, 0) 
+        # ax_right.set_xlim(0, max_val)
+        ax_right.axis('off')
+
+        plt.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.02)
+        plt.show()
+
     
     # ── Ustawianie aktywnego filtra ───────────────────────────────
     def _set_filter_binarize(self):
@@ -268,6 +312,13 @@ class MainFrame:
         self.active_filter = "contrast"
         self._pending_result = None
         self.sidebar.show_filter_controls("contrast")   
+        self._preview()
+
+    def _set_filter_power(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "power_trans"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("power_trans")   
         self._preview()
 
     def _set_filter_avg(self):

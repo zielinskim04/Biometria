@@ -39,6 +39,8 @@ class AppMenu:
         pixel_menu.add_command(label="Binaryzacja",                 command=self.cb.get("binarize"))
         pixel_menu.add_command(label="Jasność",                     command=self.cb.get("brightness"))
         pixel_menu.add_command(label="Kontrast",                    command=self.cb.get("contrast"))
+        pixel_menu.add_command(label="Potęgowanie",                    command=self.cb.get("power_trans"))
+        pixel_menu.add_command(label="Logarytmowanie",                    command=self.cb.get("log_trans"))
 
         matrix_menu = tk.Menu(edit_menu, tearoff=0)
         edit_menu.add_cascade(label="Filtry", menu=matrix_menu)
@@ -63,12 +65,14 @@ class AppMenu:
 
         # Histogram
         edit_menu.add_command(label="Wyrównanie histogramu", command=self.cb.get("equalize_histogram"))
+
       
         # ── Info ──────────────────────────────────────────────────
         info_menu = tk.Menu(menubar, tearoff=0)
         # menubar.add_command(label="Info", command=self.cb.get("show_info"))
         menubar.add_cascade(label="Info", menu=info_menu)
         info_menu.add_command(label="Info o obrazie", command=self.cb.get("show_info"))
+        info_menu.add_command(label="Projekcja pionowa i pozioma", command=self.cb.get("projections"))
 
 
         # ── Histogramy ────────────────────────────────────────────

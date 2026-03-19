@@ -54,7 +54,7 @@ class Filters:
         result = np.clip((img - 128) * factor + 128, 0, 255).astype('uint8')
         return Image.fromarray(result)
 
-    def average_filter(self, image, size=3):
+    def average_filter(self, image: Image.Image, size: int=3) -> Image.Image:
         """Filtr uśredniający, gdzie wielkość kernela jest wybierana"""
         img = np.array(image).astype('float32')
         pad = size // 2
@@ -66,7 +66,7 @@ class Filters:
         return Image.fromarray(result.astype('uint8'))
     
 
-    def gaussian_filter(self, image, size=3, sigma=1.0):
+    def gaussian_filter(self, image: Image.Image, size: int=3, sigma: float=1.0) -> Image.Image:
         """Filtr Gaussa, gdzie wielkość kernela jest wybierana"""
         kernel = np.zeros((size, size))
         center = size // 2
@@ -85,7 +85,7 @@ class Filters:
                     result[i,j,c] = np.sum(padded[i:i+size, j:j+size, c] * kernel)
         return Image.fromarray(result.astype('uint8'))
     
-    def sharpen_filter(self, image, preset="mean_removal"):
+    def sharpen_filter(self, image: Image.Image, preset: str="mean_removal") -> Image.Image:
         """Na podstawie: http://www.algorytm.org/przetwarzanie-obrazow/filtrowanie-obrazow.html"""
         kernels = {
             "mean_removal": np.array([[ -1, -1,  -1],
@@ -111,7 +111,7 @@ class Filters:
                     result[i,j,c] = np.sum(padded[i:i+3, j:j+3, c] * kernel)
         return Image.fromarray(np.clip(result, 0, 255).astype('uint8'))
     
-    def roberts_cross(self, image) -> Image.Image:
+    def roberts_cross(self, image: Image.Image) -> Image.Image:
         img_gray = np.array(self.convert_to_gray_avg(image)) 
         img = img_gray[:, :, 0].astype('float32') # tu wyciagam tylko 1 kanal skoro wszystkie sa takie same, tak samo mozna chyba w sharpen filter i jeden for mniej
         rows, cols = img.shape
@@ -182,7 +182,7 @@ class Filters:
         result = np.clip(result, 0, 255).astype('uint8')
         return Image.fromarray(result, mode='L').convert("RGB")
 
-    def custom_filter(self, image, kernel: np.ndarray):
+    def custom_filter(self, image: Image.Image, kernel: np.ndarray) -> Image.Image:
         size = kernel.shape[0]
         pad = size // 2
         img = np.array(image).astype('float32')
@@ -345,7 +345,7 @@ class Filters:
         return Image.fromarray(skeleton).convert('RGB')
 
     # ── Histogram ────────────────────────────────────────────
-    def compute_histogram(self, image: Image.Image):
+    def compute_histogram(self, image: Image.Image) -> dict[str, np.ndarray]:
         img = np.array(image)
         # print(f"DEBUG: Kształt obrazu to: {img.shape}")
         # print(f"Max wartość w obrazie: {np.max(img)}")
@@ -356,7 +356,7 @@ class Filters:
                 hist[channel][val] += 1
         return hist
 
-    def equalize_histogram(self, image):
+    def equalize_histogram(self, image: Image.Image) -> Image.Image:
         img = np.array(self.convert_to_gray_avg(image))
         hist = np.zeros(256, dtype=int)
         for val in img.flatten():
@@ -368,28 +368,37 @@ class Filters:
         result = lut[img]
         return Image.fromarray(result).convert('RGB')
     
-    # def compute_projections(self, image):
-    #     img = np.array(self.convert_to_gray_avg(image))
+    # ── Projekcja ────────────────────────────────────────────
+    
+    def compute_projections(self, image: Image.Image) -> tuple[np.array, np.array]:
+        img = np.array(self.negative(image).convert("L"))
+        horizontal = np.sum(img, axis=1) # suma wierszy (pozioma)
+        vertical = np.sum(img, axis=0) # suma kolumn (pionowa)
         
-    #     # axis=1 - suma wierszy (pozioma)
-    #     # axis=0 - suma kolumn (pionowa)
-    #     horizontal = np.sum(img, axis=1)
-    #     vertical = np.sum(img, axis=0)
-        
-    #     return horizontal, vertical
+        return horizontal, vertical
 
-    def projection_horizontal(self, image: Image.Image) -> np.ndarray:
-        """
-        Projekcja pozioma – suma jasności pikseli w każdym wierszu.
-        Zwraca tablicę długości = wysokość obrazu.
-        """
-        img = np.array(image.convert('L'))
-        return img.sum(axis=1)   # sumuj kolumny → zostają wiersze
+    # ──  ────────────────────────────────────────────
+    def power_trans(self, image: Image.Image, alpha: float) -> Image.Image:
+        """Podniosi obraz do potęgi alfa, dla alfa>1 i całkowitego mamy mnożenie obrazów, 
+        dla alfa<1 uzyskujemy pierwiastkowanie - korekta gamma,
+        wzór z normalizacją i przeskalowaniem do pełnego zakresu"""
+        img = np.array(image).astype(float)
+        j_max = np.max(img)
+        if j_max > 0:
+            result = 255 * np.power(img / j_max, alpha)
+        else:
+            result = img
 
-    def projection_vertical(self, image: Image.Image) -> np.ndarray:
-        """
-        Projekcja pionowa – suma jasności pikseli w każdej kolumnie.
-        Zwraca tablicę długości = szerokość obrazu.
-        """
-        img = np.array(image.convert('L'))
-        return img.sum(axis=0)
+        result = np.clip(result, 0, 255).astype('uint8')
+
+        return Image.fromarray(result).convert('RGB')
+    
+    def log_trans(self, image: Image.Image) -> Image.Image:
+        """Operacja logarytmowania - wzór z normalizacją i przeskalowaniem do pełnego zakresu"""
+        img = np.array(image).astype(float)
+        x = 255 / np.log(1 + np.max(img))
+        result = x * np.log(1 + img)
+        result = np.clip(result, 0, 255).astype('uint8')
+
+        return Image.fromarray(result).convert('RGB')
+    

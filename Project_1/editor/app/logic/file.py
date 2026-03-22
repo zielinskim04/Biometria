@@ -3,7 +3,6 @@ file.py
 ───────
 Odpowiada wyłącznie za operacje na plikach:
 otwieranie, zapisywanie, wybór ścieżki.
-Nie importuje nic z Tkinter (oprócz dialogów).
 """
 
 from tkinter import filedialog, messagebox
@@ -28,8 +27,8 @@ class FileHandler:
     def __init__(self):
         self.path: str | None = None   # ścieżka aktualnie otwartego pliku
 
+    # Otwiera dialog i zwraca obiekt PIL.Image lub None.
     def open_image(self) -> Optional[Image.Image]:
-        """Otwiera dialog i zwraca obiekt PIL.Image lub None."""
         path = filedialog.askopenfilename(
             title="Otwórz zdjęcie",
             filetypes=SUPPORTED_OPEN,
@@ -44,17 +43,8 @@ class FileHandler:
             messagebox.showerror("Błąd", f"Nie można otworzyć pliku:\n{e}")
             return None
 
-    def save(self, image: Optional[Image.Image]) -> bool:
-        """Zapisuje pod tą samą ścieżką. Jeśli brak ścieżki – wywołuje save_as."""
-        if image is None:
-            messagebox.showwarning("Uwaga", "Brak obrazu do zapisania.")
-            return False
-        if self.path is None:
-            return self.save_as(image)
-        return self._write(image, self.path)
-
+    # Zapisuje pod pod podaną ścieżką.
     def save_as(self, image: Optional[Image.Image]) -> bool:
-        """Otwiera dialog 'Zapisz jako' i zapisuje plik."""
         if image is None:
             messagebox.showwarning("Uwaga", "Brak obrazu do zapisania.")
             return False
@@ -67,9 +57,18 @@ class FileHandler:
             return False
         self.path = path
         return self._write(image, path)
+    
+    # Zapisuje pod tą samą ścieżką. Jeśli brak ścieżki – wywołuje save_as.
+    def save(self, image: Optional[Image.Image]) -> bool:
+        if image is None:
+            messagebox.showwarning("Uwaga", "Brak obrazu do zapisania.")
+            return False
+        if self.path is None:
+            return self.save_as(image)
+        return self._write(image, self.path)
 
+    # Właściwy zapis
     def _write(self, image: Image.Image, path: str) -> bool:
-        """Właściwy zapis – obsługa wyjątków."""
         try:
             image.save(path)
             return True

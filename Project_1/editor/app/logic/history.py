@@ -13,36 +13,32 @@ Użycie w main_frame.py:
 from typing import Optional
 from PIL import Image
 
-
+# Maksymalna liczba stanów w historii
 MAX_HISTORY = 10 
-
 
 class History:
     def __init__(self):
         self._stack: list[Image.Image] = []
 
+    #Czyści historię i ustawia nowy obraz jako stan początkowy. Przy otwieraniu nowego pliku używany
     def reset(self, image: Image.Image) -> None:
-        """Wyczyść historię i ustaw nowy obraz jako stan początkowy."""
         self._stack = [image.copy()]
 
+    # Zapisuje nowy stan obrazu
     def push(self, image: Image.Image) -> None:
-        """Zapisz nowy stan (wywołuj przed każdą modyfikacją obrazu)."""
         self._stack.append(image.copy())
         if len(self._stack) > MAX_HISTORY:
             self._stack.pop(0)   
 
+    # Cofa ostatnią operację, zwraca poprzedni stan
     def undo(self) -> Optional[Image.Image]:
-        """
-        Cofnij ostatnią operację.
-        Zwraca poprzedni stan lub None jeśli historia jest pusta.
-        """
         if len(self._stack) <= 1:
             return None
         self._stack.pop()
         return self._stack[-1].copy()
 
+    # Zwraca aktualny stan obrazu bez modyfikowania historii
     def current(self) -> Optional[Image.Image]:
-        """Zwraca aktualny stan obrazu (bez modyfikowania historii)."""
         if not self._stack:
             return None
         return self._stack[-1].copy()

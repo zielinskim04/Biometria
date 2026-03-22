@@ -2,11 +2,11 @@
 main_frame.py
 ─────────────
 Główne okno aplikacji. Łączy wszystkie komponenty UI z logiką.
-Tu obsługujesz zdarzenia (callbacki) przekazywane między UI a logiką.
+Obsługuje zdarzenia (callbacki) przekazywane między UI a logiką.
 
 Schemat działania:
     MainFrame
-        ├── buduje UI (Menu, Toolbar, Canvas, Sidebar, StatusBar)
+        ├── buduje UI (Menu, Canvas, Sidebar)
         ├── tworzy obiekty logiki (FileHandler, History)
         └── podpina callbacki: np. menu "Otwórz" → file.open_image()
 """
@@ -32,36 +32,30 @@ class MainFrame:
         self.root.geometry("1100x700")
         self.root.minsize(800, 500)
 
-        # ── Logika ────────────────────────────────────────────
+        # Logika 
         self.history = History()
         self.file    = FileHandler()
         self.filters = Filters()   
         self._preview_base  = None   # obraz przed bieżącą sesją filtra
-        self.active_filter  = None   # "binarize" | "brightness" | "contrast" | None  
+        self.active_filter  = None   # np. "binarize", "brightness" 
         self._pending_result = None   
 
-        # ── UI ────────────────────────────────────────────────
+        # UI 
         self.menu       = AppMenu(root,     callbacks=self._menu_callbacks())
         
-
-        # Środkowa część okna: canvas + sidebar obok siebie
         main_area = tk.Frame(root)
         main_area.pack(fill=tk.BOTH, expand=True)
 
         self.sidebar = Sidebar(main_area, callbacks=self._sidebar_callbacks())
         self.canvas  = ImageCanvas(main_area)
         
-
-        # ── Skróty klawiszowe ─────────────────────────────────
+        # Skróty klawiszowe 
         root.bind("<Control-o>", lambda e: self._open())
         root.bind("<Control-s>", lambda e: self._save())
         root.bind("<Control-S>", lambda e: self._save_as())
         root.bind("<Control-z>", lambda e: self._undo())
 
-    # ──────────────────────────────────────────────────────────
-    #  CALLBACKI – słowniki przekazywane do komponentów UI
-    # ──────────────────────────────────────────────────────────
-
+    # Wszystkie dostępne callbacki dla menu. Każdy klucz to identyfikator akcji, a wartość to metoda MainFrame.
     def _menu_callbacks(self) -> dict:
         return {
             "open":    self._open,
@@ -92,12 +86,10 @@ class MainFrame:
             "dilation": self._set_filter_dilation,
             "opening":  self._set_filter_opening,
             "closing":  self._set_filter_closing,
-            "top_hat": self._set_filter_top_hat,
-            "black_hat": self._set_filter_black_hat,
+            "hit_or_miss": self._set_filter_hit_or_miss,
             "skeletonize": self._set_filter_skeletonize,
             "projections": self._projections
         }
-
 
     def _sidebar_callbacks(self) -> dict:
         return {
@@ -105,12 +97,8 @@ class MainFrame:
             "cancel":  self._cancel,
             "preview": self._preview, 
         }
-
-    # ──────────────────────────────────────────────────────────
-    #  AKCJE (łączą UI ↔ logikę)
-    # ──────────────────────────────────────────────────────────
-
-
+    
+    # ── Funkcje pomocnicze ──────────────────────────────────────────────
     # Poniższa funkcja dodaje miniaturkę w slidebar, który tworzy i resetuje też historię zmian. 
     def _open(self):
         image = self.file.open_image()
@@ -160,8 +148,8 @@ class MainFrame:
         self.canvas.show(self._preview_base)
         self.sidebar.set_idle()
 
+    # Dla filtrów z suwakiem: pobiera aktualne ustawienia z sidebaru, nakłada filtr na _preview_base i pokazuje wynik.
     def _preview(self):
-        """Dla filtrów z suwakiem."""
         if self._preview_base is None or self.active_filter is None:
             return
         if self.active_filter == "binarize":
@@ -193,18 +181,24 @@ class MainFrame:
             except ValueError:
                 messagebox.showwarning("Błąd kernela","Wszystkie pola kernela muszą zawierać liczby!")
                 return
-        elif self.active_filter in ("erosion", "dilation", "opening", "closing", "top_hat", "black_hat"):
+        elif self.active_filter in ("erosion", "dilation", "opening", "closing"):
             size  = int(self.sidebar.morph_size.get())
             shape = self.sidebar.morph_shape.get()
             fn = getattr(self.filters, self.active_filter)
             result = fn(self._preview_base, size, shape)
+        elif self.active_filter == "hit_or_miss":
+            result = self.filters.hit_or_miss(
+                self._preview_base,
+                self.sidebar.hom_preset.get(),
+                int(self.sidebar.threshold.get()))
         elif self.active_filter == "skeletonize":
-            result = self.filters.skeletonize(self._preview_base)
+            result = self.filters.skeletonize(self._preview_base, int(self.sidebar.threshold.get()))
         else:
             return
         self._pending_result = result
         self.canvas.show(result)
 
+    # Po kliknięciu "Zastosuj" dodaje wynik do historii, aktualizuje podgląd i resetuje stan filtra.
     def _apply_changes(self):
         if self._pending_result is None:
             return
@@ -215,8 +209,9 @@ class MainFrame:
         self.canvas.show(self._preview_base)
         self.sidebar.set_idle()
 
+    # ── Funkcje jednokrotnego kliknięcia ──────────────────────────────────────────────
+    # Dla filtrów bez suwaków (np. negatyw, szarości) od razu nakłada filtr na aktualny obraz i pokazuje wynik.
     def _apply_one_click(self, filter_fn, label):
-        """Dla filtrów bez suwaka."""
         current = self.history.current()
         if current is None:
             return
@@ -267,8 +262,6 @@ class MainFrame:
         img_np = np.array(current.convert("L"))
         h, w = img_np.shape
 
-        max_val = max(np.max(horiz), np.max(vert))
-
         fig, ax_main = plt.subplots(figsize=(12, 10))
         fig.canvas.manager.set_window_title("Analiza Projekcji - Dopasowanie do zdjęcia")
 
@@ -285,14 +278,13 @@ class MainFrame:
         ax_right = divider.append_axes("right", size="20%", pad=0.05, sharey=ax_main)
         ax_right.barh(range(h), horiz, color='black', height=1.0, align='edge')
         ax_right.set_ylim(h, 0) 
-        # ax_right.set_xlim(0, max_val)
         ax_right.axis('off')
 
         plt.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.02)
         plt.show()
 
-    
-    # ── Ustawianie aktywnego filtra ───────────────────────────────
+    # ── Aktywne filtry ──────────────────────────────────────────────
+    # Ustawianie aktywnego filtra i pokazanie odpowiednich suwaków w sidebarze.
     def _set_filter_binarize(self):
         self._preview_base = self.history.current()
         self.active_filter = "binarize"
@@ -348,18 +340,14 @@ class MainFrame:
         self._pending_result = None
         self.sidebar.show_filter_controls("custom_filter")
 
-    # ── Info o obrazie ───────────────────────────────   
+    # ── Info o obrazie ──────────────────────────────────────────────   
     def _show_info(self):
         
         current = self.history.current()
-        if current is None:
-            self.status_bar.set_text("Brak obrazu.")
-            return
 
         img_np = np.array(current.convert('L'))
         w, h   = current.size
 
-        # Rozmiar pliku
         if self.file.path and os.path.exists(self.file.path):
             file_bytes = os.path.getsize(self.file.path)
             if file_bytes < 1024 * 1024:
@@ -369,7 +357,6 @@ class MainFrame:
         else:
             file_size = "—"
 
-        # Głębia koloru
         depth_map = {"RGB": "24-bit", "RGBA": "32-bit", "L": "8-bit",
                     "1": "1-bit", "P": "8-bit (paleta)"}
         depth = depth_map.get(current.mode, "—")
@@ -390,7 +377,7 @@ class MainFrame:
         self.sidebar.show_info(info)
         self.sidebar.show()
 
-    # ── Operacje morfologiczne ───────────────────────────────   
+    # ── POperacje morfologiczne ──────────────────────────────────────────────
     def _set_morph_filter(self, name: str):
         """Wspólny schemat dla filtrów morfologicznych."""
         self._preview_base = self.history.current()
@@ -403,10 +390,18 @@ class MainFrame:
     def _set_filter_dilation(self): self._set_morph_filter("dilation")
     def _set_filter_opening(self):  self._set_morph_filter("opening")
     def _set_filter_closing(self):  self._set_morph_filter("closing")
-    def _set_filter_top_hat(self):  self._set_morph_filter("top_hat")
-    def _set_filter_black_hat(self):  self._set_morph_filter("black_hat")
-    def _set_filter_skeletonize(self):
-        self._apply_one_click(self.filters.skeletonize, "skeletonize")
-    
 
+    def _set_filter_hit_or_miss(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "hit_or_miss"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("hit_or_miss")
+        self._preview()
+
+    def _set_filter_skeletonize(self):
+        self._preview_base = self.history.current()
+        self.active_filter = "skeletonize"
+        self._pending_result = None
+        self.sidebar.show_filter_controls("skeletonize")
+        self._preview()
     

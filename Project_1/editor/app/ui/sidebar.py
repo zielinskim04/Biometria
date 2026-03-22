@@ -4,7 +4,6 @@ from typing import Optional
 from PIL import Image, ImageTk
 import numpy as np
 
-
 class Sidebar:
     def __init__(self, parent: tk.Frame, callbacks: dict):
         self.cb = callbacks
@@ -20,6 +19,7 @@ class Sidebar:
         self.custom_kernel_entries = [] # Lista Entry dla własnego kernela
         self.morph_size  = tk.IntVar(value=3) # Rozmiar elementu strukturyzującego (operacje morfologiczne)
         self.morph_shape = tk.StringVar(value="rect") # Kształt eleentu struktuzyjącego (operacje morfologiczne)
+        self.hom_preset = tk.StringVar(value="isolated") # Preset dla operacji hit-or-miss
 
     def _build(self, parent):
         self._frame = tk.Frame(parent, width=250, bg="#f0f0f0",
@@ -56,7 +56,7 @@ class Sidebar:
                   bg="#e53935", fg="white", relief=tk.FLAT,
                   padx=8, pady=4).pack(fill=tk.X)
 
-        # Dynamiczna część, która zmienia się w zależności od aktywnego filtra
+        # Część, która zmienia się w zależności od aktywnego filtra
         self._dynamic = tk.Frame(self._frame, bg="#f0f0f0")
 
     # ── Widoczność ────────────────────────────────────────────
@@ -69,15 +69,15 @@ class Sidebar:
 
     # ── Stany ─────────────────────────────────────────────────
 
+    # Tylko nagłówek i minaiturka.
     def set_idle(self):
-        """Tylko nagłówek + miniaturka."""
         self._title.config(text="Podgląd")
         self._dynamic.pack_forget()
         self._btn_frame.pack_forget()
         self._clear_dynamic()
 
+    # Pokazanie suwaka lub przycisków w zależności od trybu.
     def show_filter_controls(self, mode: str):
-        """Suwak lub przyciski."""
         titles = {
         "binarize":  "Binaryzacja",
         "brightness": "Jasność",
@@ -96,12 +96,11 @@ class Sidebar:
         "sobel_operator": "Operator Sobela",
         "histogram": "Histogram",
         "equalize_histogram": "Wyrównanie histogramu",
-        "erosion":  "Erozja", #operacje morfologiczne
+        "erosion":  "Erozja", 
         "dilation": "Dylatacja",
         "opening":  "Otwarcie",
         "closing":  "Zamknięcie",
-        "top_hat": "Top Hat",
-        "black_hat": "Black Hat",
+        "hit_or_miss": "Hit-or-Miss",
         "skeletonize": "Szkieletowanie",
         }
 
@@ -119,19 +118,17 @@ class Sidebar:
         elif mode == "power_trans":
             self._make_slider("Potęgowanie", self.power_trans, 0.0, 3.0, 0.05)
         elif mode == "avg_filter":
-            self._make_size_slider()
+            self._set_kernel_size()
         elif mode == "gauss_filter":
-            self._make_size_slider()
+            self._set_kernel_size()
             self._make_slider("Sigma", self.sigma, 0.1, 5.0, 0.1)
         elif mode == "sharpen_filter":
             self._make_preset_selector()
         elif mode == "custom_filter":
             self._make_custom_kernel()
-
         elif mode == "histogram":
             self._btn_frame.pack_forget()
 
-            # Główny kontener na wszystkie wykresy
             self._hist_container = tk.Frame(self._dynamic, bg="#f0f0f0")
             self._hist_container.pack(fill=tk.BOTH, expand=True)
 
@@ -153,12 +150,12 @@ class Sidebar:
             self._close_btn = tk.Button(self._dynamic, text="Zamknij", 
                       command=self.set_idle, bg="#9e9e9e", fg="white")
 
-        elif mode in ("erosion", "dilation", "opening", "closing", "top_hat", "black_hat"):
+        elif mode in ("erosion", "dilation", "opening", "closing"):
             self._make_morphology_controls() 
+        elif mode == "hit_or_miss":
+            self._make_hit_or_miss_controls()
         elif mode == "skeletonize":
-            self._set_filter_skeletonize() #Morfologiczna, ale bez ustawien
-        
-
+            self._make_slider("Próg binaryzacji", self.threshold, 0, 255, 1)
         else:
             tk.Label(self._dynamic,
                      text="Podgląd aktywny.\nZatwierdź lub Anuluj.",
@@ -166,7 +163,7 @@ class Sidebar:
                      font=("Helvetica", 9), justify=tk.CENTER
                      ).pack(pady=8)
 
-
+    # ── Info ────────────────────────────────────────────────
     def show_info(self, info: dict):
         self._title.config(text="Informacje")
         self._clear_dynamic()
@@ -187,7 +184,6 @@ class Sidebar:
                     justify=tk.LEFT).pack(side=tk.LEFT, fill=tk.X)
         
     # ── Histogram ────────────────────────────────────────────────
-
     def update_histogram_plot(self, hist_data: dict):
         if not hasattr(self, '_channels'): return
 
@@ -245,10 +241,7 @@ class Sidebar:
                 canvas.create_rectangle(x, draw_h, x + 1, draw_h - val, 
                                         fill=color, outline=color)
 
-
-
     # ── Miniaturka ────────────────────────────────────────────
-
     def update_thumbnail(self, image: Image.Image):
         thumb = image.copy()
         thumb.thumbnail((230, 160))
@@ -256,7 +249,6 @@ class Sidebar:
         self._thumb_label.config(image=self._thumbnail)
 
     # ── Helper ────────────────────────────────────────────────
-
     def _clear_dynamic(self):
         for w in self._dynamic.winfo_children():
             w.destroy()
@@ -283,10 +275,9 @@ class Sidebar:
                  showvalue=False, command=on_change
                  ).pack(fill=tk.X)
 
-        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1 
     # Slider do wyboru rozmiaru kernela dla filtrów uśredniającego i Gaussa    
-    def _make_size_slider(self):
-        """Suwak rozmiaru kernela: 3, 5, 7."""
+    def _set_kernel_size(self):
+        #Sigma
         tk.Label(self._dynamic, text="Rozmiar kernela",
                 bg="#f0f0f0", font=("Helvetica", 9, "bold"),
                 anchor=tk.W).pack(fill=tk.X)
@@ -294,6 +285,7 @@ class Sidebar:
         btn_frame = tk.Frame(self._dynamic, bg="#f0f0f0")
         btn_frame.pack(fill=tk.X, pady=4)
 
+        #Rozmiar kernela
         for size in [3, 5, 7]:
             tk.Radiobutton(btn_frame, text=f"{size}×{size}",
                         variable=self.filter_size, value=size,
@@ -302,7 +294,6 @@ class Sidebar:
             
     # Preset dla filtru wyostrzającego        
     def _make_preset_selector(self):
-        """Selector dla presetów filtru wyostrzającego."""
         tk.Label(self._dynamic, text="Preset wyostrzania",
                 bg="#f0f0f0", font=("Helvetica", 9, "bold"),
                 anchor=tk.W).pack(fill=tk.X)
@@ -367,21 +358,18 @@ class Sidebar:
                 e.grid(row=i, column=j, padx=1, pady=1)
                 self.custom_kernel_entries.append(e)
 
+    # Przepudowuje siatkę, gdy zmieni sie rozmiar
     def _rebuild_custom_grid(self):
-        """Przebudowuje siatkę gdy zmieni się rozmiar."""
         self._build_custom_grid(self.custom_size.get())
 
     def get_custom_kernel(self):
         size = self.custom_size.get()
         vals = [float(e.get()) for e in self.custom_kernel_entries]
         return np.array(vals, dtype='float32').reshape(size, size)
-    
-
 
     # ── Operacje morfologiczne ────────────────────────────────────────────────  
+    # Rozmiar i kształt elementu struktuzyjącego
     def _make_morphology_controls(self):
-        """Rozmiar SE + kształt SE."""
-
         # Rozmiar
         tk.Label(self._dynamic, text="Rozmiar elementu strukturyzującego",
                 bg="#f0f0f0", font=("Helvetica", 9, "bold"),
@@ -415,5 +403,27 @@ class Sidebar:
                         bg="#f0f0f0",
                         command=lambda: self.cb.get("preview") and self.cb.get("preview")()
                         ).pack(anchor=tk.W, padx=4)
+            
+    def _make_hit_or_miss_controls(self):
+        # Próg binaryzacji
+        self._make_slider("Próg binaryzacji", self.threshold, 0, 255, 1)
 
-    
+        # Wybór presetu
+        tk.Label(self._dynamic, text="Wzorzec",
+                bg="#f0f0f0", font=("Helvetica", 9, "bold"),
+                anchor=tk.W).pack(fill=tk.X, pady=(8, 4))
+
+        self.hom_preset = tk.StringVar(value="isolated")
+        presets = [
+            ("Izolowany piksel", "isolated"),
+            ("Kwadrat 2×2",      "square_2x2"),
+            ("Krzyż",            "cross"),
+            ("Przekątna ↖",      "diagonal_tl"),
+            ("Przekątna ↘",      "diagonal_br"),
+        ]
+        for label, val in presets:
+            tk.Radiobutton(self._dynamic, text=label,
+                        variable=self.hom_preset, value=val,
+                        bg="#f0f0f0",
+                        command=lambda: self.cb.get("preview") and self.cb.get("preview")()
+                        ).pack(anchor=tk.W, padx=4)

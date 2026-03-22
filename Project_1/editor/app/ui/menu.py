@@ -52,24 +52,21 @@ class AppMenu:
         matrix_menu.add_command(label="Operator Prewitta", command=self.cb.get("prewitt_operator"))
         matrix_menu.add_command(label="Operator Sobela", command=self.cb.get("sobel_operator"))
 
-        # Operacje morfologiczne 
+        # ── Operacje morfologiczne ────────────────────────────────
         menu_morph = tk.Menu(edit_menu, tearoff=0)
         edit_menu.add_cascade(label="Morfologia", menu=menu_morph)
         menu_morph.add_command(label="Erozja",     command=self.cb.get("erosion"))
         menu_morph.add_command(label="Dylatacja",  command=self.cb.get("dilation"))
         menu_morph.add_command(label="Otwarcie",   command=self.cb.get("opening"))
         menu_morph.add_command(label="Zamknięcie", command=self.cb.get("closing"))
-        menu_morph.add_command(label="Top Hat", command=self.cb.get("top_hat"))
-        menu_morph.add_command(label="Black Hat", command=self.cb.get("black_hat"))
+        menu_morph.add_command(label="Hit-or-Miss", command=self.cb.get("hit_or_miss"))
         menu_morph.add_command(label="Szkieletowanie", command=self.cb.get("skeletonize"))
 
-        # Histogram
+        # ── Histogram ────────────────────────────────────────────
         edit_menu.add_command(label="Wyrównanie histogramu", command=self.cb.get("equalize_histogram"))
 
-      
         # ── Info ──────────────────────────────────────────────────
         info_menu = tk.Menu(menubar, tearoff=0)
-        # menubar.add_command(label="Info", command=self.cb.get("show_info"))
         menubar.add_cascade(label="Info", menu=info_menu)
         info_menu.add_command(label="Info o obrazie", command=self.cb.get("show_info"))
         info_menu.add_command(label="Projekcja pionowa i pozioma", command=self.cb.get("projections"))

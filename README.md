@@ -3,6 +3,7 @@
 Repozytorium projektów zaliczeniowych z przedmiotu **Biometria**  
 Wydział Matematyki i Nauk Informacyjnych, Politechnika Warszawska  
 Prowadzący: dr inż. Janusz Rafałko | Semestr letni 2025/2026
+
 Strona przedmiotu: [link](https://pages.mini.pw.edu.pl/~rafalkoj/www/?Dydaktyka:2025%2F2026:-_Biometria)
 
 

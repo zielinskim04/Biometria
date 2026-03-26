@@ -13,6 +13,7 @@ Strona przedmiotu: [link](https://pages.mini.pw.edu.pl/~rafalkoj/www/?Dydaktyka:
 Aplikacja okienkowa do przetwarzania i analizy obrazów.
 
 Szczegóły projektu: [`Projekt_1/README.md`](Projekt_1/README.md)
+Raport projektu: [`Projekt_1/Raport_1.pdf`](Projekt_1/Raport_1.pdf)
 
 
 ## Projekt 2

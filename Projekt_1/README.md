@@ -2,7 +2,7 @@
  
 Jest to aplikacja okienkowa służąca do przetwarzania obrazów. Napisana jest w Pythonie z użyciem Tkinter i Pillow. Wszystkie funkcje są zaimplementowane, bez użycia dodatkowych bibliotek, poza Numpy.
 
-Raport projektu w pliku pdf: Raport projektu: [`Raport_1.pdf`](Raport_1.pdf)
+Raport projektu w pliku pdf: [`Raport_1.pdf`](Raport_1.pdf)
  
 ## Struktura projektu
  

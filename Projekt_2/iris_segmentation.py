@@ -315,3 +315,127 @@ class IrisSegmentation(ImageProcessor):
         c0, c1 = max(0, cx - 2), min(arr.shape[1], cx + 3)
         arr[r0:r1, c0:c1] = (255, 255, 0)
         return Image.fromarray(arr)
+
+
+# Klasa do zakodowania tęczówki przy pomocy falki Gabora
+class IrisEncoder:
+
+    def __init__(self):
+        self.num_points = 128
+
+    def get_gaussian_window(self, size: int) -> np.ndarray:
+        # Zwraca jednowymiarowe okno Gaussa do uśredniania w kierunku radialnym
+        x = np.arange(size) - size // 2
+        sigma = max(size / 3.0, 1.0)
+        g = np.exp(-(x ** 2) / (2 * sigma ** 2))
+        return g / g.sum()
+    
+    def get_gabor_filter(self, length: int, f: float) -> np.ndarray:
+        # Filtr Gabora na podstawie książki
+        sigma = 0.5 * np.pi * f
+        # x = np.linspace(-length // 2, length // 2, length)
+        # tutaj nie rozumiem jakie wartosci dac zeby dzialalo
+        x = np.linspace(-np.pi, np.pi, length)
+        gaussian = np.exp(-(x**2) / (sigma ** 2))
+        wave = np.exp(-1j * 2 * np.pi * f * x)
+        return gaussian * wave
+    
+    def extract_and_average_band(self, rectangle: np.ndarray, start_row: int, end_row: int, valid_cols: np.ndarray) -> np.ndarray:
+        # Wycina pas, wybiera dozwolone kąty, uśrednia radialnie
+
+        # Wycina odpowiednie wiersze i kolumny (kąty)
+        band_pixels = rectangle[start_row:end_row, valid_cols]
+
+        # Uśrednienie radialne (os Y) przy pomocy okna gaussa
+        height = end_row - start_row
+        g_window = self.get_gaussian_window(height)
+
+        averaged = np.sum(band_pixels * g_window[:, None], axis=0) 
+        # g_window[:, None] zmienia płaską tablicę okna Gaussa w pionową kolumnę, mnożymy pas przez wagi i sumujemy z góry do dołu do 1d
+
+        # Wybór 128 punktow
+        old_x = np.linspace(0, 1, len(averaged))
+        new_x = np.linspace(0, 1, self.num_points)
+        resampled = np.interp(new_x, old_x, averaged) # interpolacja liniowa, żeby mieć tyle samo punktów dla każdego paska
+
+        return resampled
+    
+    def encode(self, rectangle: np.ndarray, f_gabor: float) -> np.ndarray:
+        # Upewniamy się, że obraz jest w odcieniach szarości
+        if rectangle.ndim == 3:
+            rectangle = np.dot(rectangle[..., :3], [0.2989, 0.5870, 0.1140])
+        else:
+            rectangle = rectangle.astype(float)
+
+        rows, cols = rectangle.shape
+        # Zakładamy, że obraz ma 360 kolumn (każda to 1 stopień) oraz 64 wiersze
+        band_height = rows // 8
+
+        # Definiujemy dozwolone kąty (kolumny) dla 3 grup pasów: (zgodnie z książką)
+        # Pasy 1-4 (wewnętrzne): omijamy [255, 285]
+        cols_1_4 = np.concatenate([np.arange(0, 255), np.arange(285, 360)])
+        
+        # Pasy 5-6 (środkowe): omijamy po 67 stopni u góry i u dołu
+        cols_5_6 = np.concatenate([np.arange(0, 57), np.arange(124, 237), np.arange(304, 360)])
+        
+        # Pasy 7-8 (zewnętrzne): zostawiamy tylko "czyste boki" (po 90 stopni z każdej strony)
+        cols_7_8 = np.concatenate([np.arange(0, 45), np.arange(135, 225), np.arange(315, 360)])
+
+        iris_code = np.zeros((8, self.num_points * 2), dtype=np.uint8)
+        
+        gabor_filter = self.get_gabor_filter(length=35, f=f_gabor)
+
+        for band_idx in range(8):
+            start_row = band_idx * band_height
+            end_row = start_row + band_height
+
+            if band_idx < 4:     # Pasy 0, 1, 2, 3 (czyli 1-4)
+                valid_cols = cols_1_4
+            elif band_idx < 6:   # Pasy 4, 5 (czyli 5-6)
+                valid_cols = cols_5_6
+            else:                # Pasy 6, 7 (czyli 7-8)
+                valid_cols = cols_7_8
+
+            signal_1d = self.extract_and_average_band(rectangle, start_row, end_row, valid_cols)
+
+            # Splot sygnału z filtrem Gabora (wynik to liczby zespolone)
+            # mode='same' zachowuje długość 128 punktów
+            response = np.convolve(signal_1d, gabor_filter, mode='same')
+
+            # Kwantyzacja fazy (demodulacja 2-bitowa)
+            for i in range(self.num_points):
+                re = np.real(response[i])
+                im = np.imag(response[i])
+                
+                # Pierwszy bit = 1 jeśli Re > 0, w przeciwnym razie 0
+                bit1 = 1 if re > 0 else 0
+                # Drugi bit = 1 jeśli Im > 0, w przeciwnym razie 0
+                bit2 = 1 if im > 0 else 0
+                
+                # Zapisujemy w macierzy (każdy punkt zajmuje 2 pozycje w kolumnie)
+                iris_code[band_idx, 2 * i] = bit1
+                iris_code[band_idx, 2 * i + 1] = bit2
+
+        return iris_code
+    
+    def draw_code(self, iris_code: np.ndarray, scale_factor: int = 10) -> Image.Image:
+        # 1. Sprawdzamy, czy kod ma dobry kształt (np. 8x256)
+        if iris_code.ndim != 2 or iris_code.shape[0] != 8:
+            raise ValueError(f"Oczekiwano kodu o kształcie (8, X), a otrzymano {iris_code.shape}")
+
+        # 2. Zamieniamy zera i jedynki na odcienie szarości (uint8)
+        # 0 -> 0 (czarny), 1 -> 255 (biały)
+        image_data = (iris_code * 255).astype(np.uint8)
+
+        # 3. Tworzymy mały, binarny obrazek z macierzy PIL
+        small_image = Image.fromarray(image_data, mode='L') # mode 'L' to 8-bitowa szarość
+
+        # 4. Skalujemy go, aby był widoczny na ekranie (np. 10x powiększenie)
+        # Używamy Image.NEAREST, aby zachować ostre krawędzie "pikseli" kodu (nie chcemy rozmycia)
+        width, height = small_image.size
+        new_size = (width * scale_factor, height * scale_factor)
+        drawn_code = small_image.resize(new_size, Image.NEAREST)
+
+        return drawn_code
+
+

@@ -257,8 +257,6 @@ class IrisSegmentation(ImageProcessor):
 
     # ── 8. Główna funkcja ─────────────────────────────────────────────────
 
-    # ── 8. Główna funkcja ─────────────────────────────────────────────────
-
     def segment(self, image: Image.Image,
                 X_pupil: float = 1.5,
                 X_iris:  float = 1.8,
@@ -307,7 +305,6 @@ class IrisSegmentation(ImageProcessor):
         )
 
     # ── 9. Obraz wynikowy z okręgami ──────────────────────────────────────
-
     def draw_result(self, image: Image.Image, result: dict) -> Image.Image:
         arr = np.array(image.convert('RGB'))
         cx, cy = result['cx'], result['cy']

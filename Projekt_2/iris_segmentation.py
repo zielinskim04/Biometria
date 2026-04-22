@@ -189,7 +189,7 @@ class IrisSegmentation(ImageProcessor):
             # Na masce binarnej zewnętrzna krawędź to ostatni biały piksel
             # Funkcja np.where zwraca indeksy wszystkich białych pikseli (255)
             white_pixels = np.where(search_zone == 255)[0]
-            
+           
             if len(white_pixels) == 0:
                 continue
                 
@@ -438,4 +438,12 @@ class IrisEncoder:
 
         return drawn_code
 
-
+    def calculate_hamming_distance(self, code1: np.ndarray, code2: np.ndarray) -> float:
+        # Zwraca ułamek różniących się bitów między kodami
+        if code1.shape != code2.shape:
+            raise ValueError("Kody muszą mieć ten sam wymiar!")
+        
+        mismatches = np.sum(code1 != code2)
+        total_bits = code1.size
+        
+        return mismatches / total_bits

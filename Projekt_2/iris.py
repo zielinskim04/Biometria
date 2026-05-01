@@ -404,7 +404,7 @@ class IrisEncoder:
             # mode='same' zachowuje długość 128 punktów
             response = np.convolve(signal_1d, gabor_filter, mode='same')
 
-            # Kwantyzacja fazy (demodulacja 2-bitowa)
+            # Kwantyzacja fazy
             for i in range(self.num_points):
                 re = np.real(response[i])
                 im = np.imag(response[i])
@@ -421,19 +421,13 @@ class IrisEncoder:
         return iris_code
     
     def draw_code(self, iris_code: np.ndarray, scale: int = 10) -> Image.Image:
-        # 1. Sprawdzamy, czy kod ma dobry kształt (np. 8x256)
         if iris_code.ndim != 2 or iris_code.shape[0] != 8:
             raise ValueError(f"Oczekiwano kodu o kształcie (8, X), a otrzymano {iris_code.shape}")
 
-        # 2. Zamieniamy zera i jedynki na odcienie szarości (uint8)
-        # 0 -> 0 (czarny), 1 -> 255 (biały)
         image_data = (iris_code * 255).astype(np.uint8)
 
-        # 3. Tworzymy mały, binarny obrazek z macierzy PIL
-        small_image = Image.fromarray(image_data, mode='L') # mode 'L' to 8-bitowa szarość
+        small_image = Image.fromarray(image_data, mode='L') 
 
-        # 4. Skalujemy go, aby był widoczny na ekranie (np. 10x powiększenie)
-        # Używamy Image.NEAREST, aby zachować ostre krawędzie "pikseli" kodu (nie chcemy rozmycia)
         width, height = small_image.size
         new_size = (width * scale, height * scale)
         drawn_code = small_image.resize(new_size, Image.NEAREST)

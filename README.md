@@ -17,9 +17,9 @@ Szczegóły projektu: [`Projekt_1/README.md`](Projekt_1/README.md)
 Raport z projektu: [`Projekt_1/Raport_1.pdf`](Projekt_1/Raport_1.pdf)
 
 
-## Projekt 2
+## Projekt 2 - Rozpoznawanie tęczówki
 
-Aplikacja okienkowa do przetwarzania i analizy obrazów.
+Implementacja mechanizmu do rozpoznawania tęczówek.
 
 Szczegóły projektu: [`Projekt_2/README.md`](Projekt_2/README.md)
 

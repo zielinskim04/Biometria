@@ -1,8 +1,8 @@
 """
-iris_segmentation.py
+iris.py
 --------------------
-Segmentacja tęczówki – tylko numpy + PIL (Wersja zoptymalizowana i odchudzona).
-Rozwiązanie czysto matematyczne bez użycia OpenCV.
+Segmentacja tęczówki – tylko numpy + PIL.
+Rozwiązanie  bez użycia OpenCV.
 """
 
 import numpy as np
@@ -148,67 +148,70 @@ class IrisSegmentation(ImageProcessor):
 
     # ── 5. Detekcja promienia tęczówki ────────────────────────────────────
 
+    @staticmethod
+    def _gauss_kernel_1d(sigma: float) -> np.ndarray:
+        """G_σ(r) = exp(-r²/2σ²), znormalizowany do sumy 1."""
+        radius = int(np.ceil(3.0 * sigma))
+        r = np.arange(-radius, radius + 1, dtype=np.float64)
+        g = np.exp(-r ** 2 / (2.0 * sigma ** 2))
+        return g / g.sum()
+
+    def _contour_mean(self, gray: np.ndarray, cx: float, cy: float,
+                    r: float, n_angles: int = 360,
+                    angle_mask: np.ndarray | None = None) -> float:
+        """∮ I(x,y) ds / (2πr) ≈ średnia intensywność na okręgu (cx, cy, r)."""
+        angles = np.linspace(0.0, 2.0 * np.pi, n_angles, endpoint=False)
+        if angle_mask is not None:
+            angles = angles[angle_mask]
+        xs = np.clip(np.round(cx + r * np.cos(angles)).astype(int), 0, gray.shape[1] - 1)
+        ys = np.clip(np.round(cy + r * np.sin(angles)).astype(int), 0, gray.shape[0] - 1)
+        return float(gray[ys, xs].mean())
+
+    def _daugman_ido(self, gray: np.ndarray, cx: float, cy: float,
+                    r_min: int, r_max: int, sigma: float = 3.0,
+                    n_angles: int = 360,
+                    angle_mask: np.ndarray | None = None) -> tuple[int, float]:
+        """
+        max_(r) | G_σ(r) * d/dr [∮ I(x,y) ds / 2πr] |
+        Kroki: całka konturowa → pochodna → splot z Gaussem → argmax|·|
+        """
+        radii = np.arange(r_min, r_max + 1, dtype=np.float64)
+        # 1. Całka konturowa M(r) dla każdego promienia
+        M = np.array([self._contour_mean(gray, cx, cy, r, n_angles, angle_mask)
+                    for r in radii])
+        # 2. Pochodna d/dr (centralne różnice skończone)
+        dM = np.gradient(M)
+        # 3. Splot z G_σ(r) — wygładza szum (rzęsy, odblask)
+        S = np.convolve(dM, self._gauss_kernel_1d(sigma), mode='same')
+        # 4. Szukamy r* = argmax |S(r)|
+        best_idx = int(np.argmax(np.abs(S)))
+        return int(radii[best_idx]), float(np.abs(S[best_idx]))
+
     def _detect_iris_radius(self, gray: np.ndarray, cx: int, cy: int, pupil_r: int, X_iris: float) -> int:
         h, w = gray.shape
+        r_min = int(pupil_r * 1.2)
+        r_max = min(cx, cy, w - cx, h - cy) - 5
 
-        # Tworzymy obraz binarny (Tęczówka = 255, Tło = 0)
-        P = self._mean_brightness(gray)
-        binary = np.zeros_like(gray)
-        binary[gray < P / X_iris] = 255
+        #---------
+        P = float(gray.mean())
+        binary = (gray < P / X_iris).astype(np.uint8)
+        ys, xs = np.where(binary == 1)
+        if len(xs) > 0:
+            dists = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
+            r_max = min(r_max, int(np.percentile(dists, 95)))
 
-        # Usuwamy obszar źrenicy, żeby nie zakłócał maski
-        yy, xx = np.ogrid[:h, :w]
-        binary[(xx - cx) ** 2 + (yy - cy) ** 2 <= (pupil_r + 5) ** 2] = 0
+        if r_max <= r_min:
+            return int(pupil_r * 2.0)
 
-        # Operacje morfologiczne - łatamy dziury po odblaskach i czyścimy tło
-        binary = self._morph_close(binary, size=9, shape='ellipse')
-        binary = self._morph_open(binary, size=5, shape='ellipse')
+        # Maska kątowa: wyklucz 75°–105° (dolna powiek) i 255°–285° (górna powiek)
+        degs = np.linspace(0.0, 360.0, 360, endpoint=False)
+        angle_mask = ~(((degs >= 75) & (degs <= 105)) | ((degs >= 255) & (degs <= 285)))
 
-        # Ray-casting, ale tylko dwa
-        angles_deg = [0, 180]  
-        radii_found = []
+        # IDO z filtrem Gaussa, sigma=5.0 (granica tęczówki jest łagodniejsza niż źrenicy)
+        iris_r, _ = self._daugman_ido(gray, cx, cy, r_min, r_max,
+                                    sigma=5.0, n_angles=360, angle_mask=angle_mask)
+        return iris_r
 
-        for deg in angles_deg:
-            rad = np.deg2rad(deg)
-            max_steps = min(cx, cy, w - cx, h - cy) - 5
-            steps = np.arange(0, max_steps)
-            
-            # Pobieramy współrzędne dla promienia
-            xs = np.clip((cx + steps * np.cos(rad)).astype(int), 0, w - 1)
-            ys = np.clip((cy + steps * np.sin(rad)).astype(int), 0, h - 1)
-            
-            profile = binary[ys, xs]
-            
-            # Strefa ignorowania - odsuwamy się od źrenicy
-            ignore_zone = int(pupil_r * 1.6)
-            search_zone = profile[ignore_zone:-5]
-            
-            if len(search_zone) == 0:
-                continue
-
-            # Na masce binarnej zewnętrzna krawędź to ostatni biały piksel
-            # Funkcja np.where zwraca indeksy wszystkich białych pikseli (255)
-            white_pixels = np.where(search_zone == 255)[0]
-           
-            if len(white_pixels) == 0:
-                continue
-                
-            # Bierzemy ostatni biały piksel i dodajemy strefę ignorowania
-            last_white_idx = int(white_pixels[-1]) + ignore_zone
-            radii_found.append(last_white_idx)
-
-        if len(radii_found) == 2:
-            radius = int(np.mean(radii_found))
-        elif len(radii_found) == 1:
-            radius = radii_found[0]
-        else:
-            radius = int(pupil_r * 2.5)
-
-        max_r = min(cx, cy, w - cx, h - cy) - 5
-        if radius < int(pupil_r * 1.2) or radius > max_r:
-            radius = min(int(pupil_r * 2.5), max_r)
-            
-        return max(radius, int(pupil_r * 1.2))
 
     # ── 6. Rozwinięcie → prostokąt (Wektoryzacja + Interpolacja) ────────
 
@@ -260,8 +263,8 @@ class IrisSegmentation(ImageProcessor):
     def segment(self, image: Image.Image,
                 X_pupil: float = 1.5,
                 X_iris:  float = 1.8,
-                close_size_pupil: int = 15,
-                open_size_pupil:  int = 7,
+                close_size: int = 15,
+                open_size:  int = 7,
                 radial_res:  int = 64,
                 angular_res: int = 360,
                 verbose: bool = True) -> dict:
@@ -270,8 +273,8 @@ class IrisSegmentation(ImageProcessor):
 
         # ── Źrenica ───────────────────────────────────────────────────────
         bin_pupil  = self.binarize_px(image, X_pupil) 
-        bin_closed = self._morph_close(bin_pupil, close_size_pupil, 'ellipse')
-        bin_opened = self._morph_open(bin_closed, open_size_pupil,  'ellipse')
+        bin_closed = self._morph_close(bin_pupil, close_size, 'ellipse')
+        bin_opened = self._morph_open(bin_closed, open_size,  'ellipse')
         bin_clean  = self._keep_largest_blob(bin_opened)
 
         cx, cy, pupil_r = self._detect_circle_projection(bin_clean)
@@ -303,6 +306,7 @@ class IrisSegmentation(ImageProcessor):
             iris_r=iris_r,
             unwrapped=unwrapped,
         )
+    
 
     # ── 9. Obraz wynikowy z okręgami ──────────────────────────────────────
     def draw_result(self, image: Image.Image, result: dict) -> Image.Image:
@@ -329,15 +333,13 @@ class IrisEncoder:
         sigma = max(size / 3.0, 1.0)
         g = np.exp(-(x ** 2) / (2 * sigma ** 2))
         return g / g.sum()
-    
+
+
     def get_gabor_filter(self, length: int, f: float) -> np.ndarray:
-        # Filtr Gabora na podstawie książki
-        sigma = 0.5 * np.pi * f
-        # x = np.linspace(-length // 2, length // 2, length)
-        # tutaj nie rozumiem jakie wartosci dac zeby dzialalo
-        x = np.linspace(-np.pi, np.pi, length)
-        gaussian = np.exp(-(x**2) / (sigma ** 2))
-        wave = np.exp(-1j * 2 * np.pi * f * x)
+        n = np.arange(-(length // 2), length // 2 + 1, dtype=np.float64)
+        sigma = length / 6.0         
+        gaussian = np.exp(-n ** 2 / (2.0 * sigma ** 2))
+        wave = np.exp(-1j * 2.0 * np.pi * f * n)
         return gaussian * wave
     
     def extract_and_average_band(self, rectangle: np.ndarray, start_row: int, end_row: int, valid_cols: np.ndarray) -> np.ndarray:
@@ -407,7 +409,7 @@ class IrisEncoder:
                 re = np.real(response[i])
                 im = np.imag(response[i])
                 
-                # Pierwszy bit = 1 jeśli Re > 0, w przeciwnym razie 0
+                 # Pierwszy bit = 1 jeśli Re > 0, w przeciwnym razie 0
                 bit1 = 1 if re > 0 else 0
                 # Drugi bit = 1 jeśli Im > 0, w przeciwnym razie 0
                 bit2 = 1 if im > 0 else 0
@@ -418,7 +420,7 @@ class IrisEncoder:
 
         return iris_code
     
-    def draw_code(self, iris_code: np.ndarray, scale_factor: int = 10) -> Image.Image:
+    def draw_code(self, iris_code: np.ndarray, scale: int = 10) -> Image.Image:
         # 1. Sprawdzamy, czy kod ma dobry kształt (np. 8x256)
         if iris_code.ndim != 2 or iris_code.shape[0] != 8:
             raise ValueError(f"Oczekiwano kodu o kształcie (8, X), a otrzymano {iris_code.shape}")
@@ -433,7 +435,7 @@ class IrisEncoder:
         # 4. Skalujemy go, aby był widoczny na ekranie (np. 10x powiększenie)
         # Używamy Image.NEAREST, aby zachować ostre krawędzie "pikseli" kodu (nie chcemy rozmycia)
         width, height = small_image.size
-        new_size = (width * scale_factor, height * scale_factor)
+        new_size = (width * scale, height * scale)
         drawn_code = small_image.resize(new_size, Image.NEAREST)
 
         return drawn_code
@@ -447,3 +449,5 @@ class IrisEncoder:
         total_bits = code1.size
         
         return mismatches / total_bits
+
+

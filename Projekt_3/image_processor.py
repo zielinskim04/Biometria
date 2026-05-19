@@ -1,19 +1,19 @@
 """
 Narzędzia do przetwarzania odcisków palców i szkieletyzacji KMM.
 Używane biblioteki: wyłącznie numpy i PIL.
- 
+
 Typowe użycie
 -------------
     from PIL import Image
     from image_processor import ImageProcessor
- 
+
     proc     = ImageProcessor()
     obraz    = Image.open("odcisk.png")
- 
+
     # Pełny potok (zalecane)
     binarny  = proc.preprocess_fingerprint(obraz)   # uint8, 0 = grzbiet, 255 = tło
     szkielet = proc.KMM(binarny)                     # uint8, 0 = szkielet, 255 = tło
- 
+
     # Szybka binaryzacja bez Gabora
     szary    = proc._to_gray(obraz)
     binarny  = (szary > 128).astype("uint8") * 255   # 255 = tło, wtedy...
@@ -21,17 +21,17 @@ Typowe użycie
     binarny  = 255 - binarny
     szkielet = proc.KMM(binarny)
 """
- 
+
 import numpy as np
 from PIL import Image
- 
- 
+
+
 class ImageProcessor:
- 
+
     # ══════════════════════════════════════════════════════════════════════
     # ① Operacje morfologiczne
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def _get_structuring_element(self, size: int, shape: str) -> np.ndarray:
         """Tworzy element strukturalny o podanym rozmiarze i kształcie."""
         se = np.zeros((size, size), dtype=np.uint8)
@@ -44,11 +44,11 @@ class ImageProcessor:
         elif shape == 'square':
             se[:] = 1
         return se
- 
+
     def _to_gray(self, image: Image.Image) -> np.ndarray:
         """Konwertuje obraz PIL do tablicy odcieni szarości (uint8)."""
         return np.array(image.convert('L'))
- 
+
     def _erode(self, img: np.ndarray, se: np.ndarray) -> np.ndarray:
         """Erozja morfologiczna (minimum lokalne)."""
         pad = se.shape[0] // 2
@@ -57,7 +57,7 @@ class ImageProcessor:
         for di, dj in np.argwhere(se):
             out = np.minimum(out, p[di:di + img.shape[0], dj:dj + img.shape[1]])
         return out
- 
+
     def _dilate(self, img: np.ndarray, se: np.ndarray) -> np.ndarray:
         """Dylatacja morfologiczna (maksimum lokalne)."""
         pad = se.shape[0] // 2
@@ -66,19 +66,19 @@ class ImageProcessor:
         for di, dj in np.argwhere(se):
             out = np.maximum(out, p[di:di + img.shape[0], dj:dj + img.shape[1]])
         return out
- 
+
     def _open(self, img: np.ndarray, se: np.ndarray) -> np.ndarray:
         """Otwarcie morfologiczne (erozja → dylatacja) – usuwa małe obiekty."""
         return self._dilate(self._erode(img, se), se)
- 
+
     def _close(self, img: np.ndarray, se: np.ndarray) -> np.ndarray:
         """Domknięcie morfologiczne (dylatacja → erozja) – wypełnia małe luki."""
         return self._erode(self._dilate(img, se), se)
- 
+
     # ══════════════════════════════════════════════════════════════════════
     # ② Splotowanie 2D przez FFT (szybsze niż pętla naiwna)
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def _convolve2d(self, img: np.ndarray, kernel: np.ndarray) -> np.ndarray:
         """Splot liniowy 2D przez FFT. Zwraca tablicę o tym samym rozmiarze co `img`."""
         sh = tuple(
@@ -91,21 +91,21 @@ class ImageProcessor:
         ))
         ph, pw = kernel.shape[0] // 2, kernel.shape[1] // 2
         return out[ph: ph + img.shape[0], pw: pw + img.shape[1]]
- 
+
     # ══════════════════════════════════════════════════════════════════════
     # ③ Bank filtrów Gabora
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def _gabor_kernel(self, size: int, theta: float, freq: float,
                       sigma_perp: float = 4.0,
                       sigma_par:  float = 4.0) -> np.ndarray:
         """
         Rzeczywiste (cosinusoidalne) jądro Gabora skierowane wzdłuż orientacji grzbietu `theta`.
- 
+
         Układ współrzędnych:
           xr – prostopadle do grzbietu → oś oscylacji sinusoidalnych
           yr – wzdłuż grzbietu         → oś wydłużenia gaussowskiego
- 
+
         Parametry
         ---------
         size       : rozmiar jądra (zalecana nieparzysta liczba całkowita)
@@ -124,27 +124,27 @@ class ImageProcessor:
                   * np.cos(2.0 * np.pi * freq * xr))
         kernel -= kernel.mean()        # zerowa średnia → brak przesunięcia DC
         return kernel
- 
+
     def _estimate_orientation(self, gray: np.ndarray,
                                block: int = 16) -> np.ndarray:
         """
         Blokowa estymacja orientacji grzbietów metodą kwadratów gradientów
         (Hong, Wan & Jain 1998).
- 
+
         Zwraca obraz orientacji z wartościami w [0, π),
         gdzie 0 oznacza poziomy grzbiet.
         """
         Kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], float)  # filtr Sobela X
         gx = self._convolve2d(gray.astype(float), Kx)
         gy = self._convolve2d(gray.astype(float), Kx.T)              # filtr Sobela Y
- 
+
         # Komponenty podwójnego kąta: eliminują niejednoznaczność π w orientacji grzbietów
         Vx = 2.0 * gx * gy        # ≈ sin(2θ)
         Vy = gx ** 2 - gy ** 2    # ≈ cos(2θ)
- 
+
         H, W = gray.shape
         ori  = np.zeros((H, W), float)
- 
+
         for r in range(0, H, block):
             for c in range(0, W, block):
                 bvx = Vx[r:r + block, c:c + block].mean()
@@ -153,7 +153,7 @@ class ImageProcessor:
                 ori[r:r + block, c:c + block] = \
                     0.5 * np.arctan2(bvx, bvy) + np.pi / 2.0
         return ori
- 
+
     def gabor_enhance(self, gray: np.ndarray,
                       n_angles:   int   = 8,
                       freq:       float = 1.0 / 9.0,
@@ -162,10 +162,10 @@ class ImageProcessor:
                       sigma_par:  float = 4.5) -> np.ndarray:
         """
         Wzmocnienie grzbietów odcisku palca za pomocą kierunkowego banku filtrów Gabora.
- 
+
         Zakłada, że grzbiecie są CIEMNE na jasnym tle (typowy skaner optyczny).
         Zwraca tablicę float64 w [0, 1], gdzie JASNE wartości odpowiadają grzbietom.
- 
+
         Strategia
         ---------
         1. Odwróć i znormalizuj, aby grzbiecie stały się jasne.
@@ -176,51 +176,51 @@ class ImageProcessor:
         # Odwracamy obraz (ciemne grzbiecie → jasne) i normalizujemy do [0, 1]
         f = gray.astype(np.float64)
         f = (f.max() - f) / (f.max() - f.min() + 1e-8)
- 
+
         angles  = np.linspace(0, np.pi, n_angles, endpoint=False)
         kernels = [self._gabor_kernel(ksize, t, freq, sigma_perp, sigma_par)
                    for t in angles]
- 
+
         # Stos wszystkich odpowiedzi Gabora: kształt (n_angles, H, W)
         resps = np.stack([self._convolve2d(f, k) for k in kernels])
- 
+
         # Orientacja per piksel → indeks najbliższego jądra Gabora
         ori = self._estimate_orientation(gray)
         idx = np.round(
             (ori % np.pi) / np.pi * n_angles
         ).astype(int) % n_angles
- 
+
         # Wybranie odpowiedzi dopasowanej do lokalnej orientacji (wektoryzowane)
         rows   = np.arange(gray.shape[0])[:, None]
         cols   = np.arange(gray.shape[1])[None, :]
         picked = resps[idx, rows, cols]
- 
+
         # Normalizacja odpowiedzi do [0, 1]
         picked -= picked.min()
         picked /= (picked.max() + 1e-8)
         return picked
- 
+
     # ══════════════════════════════════════════════════════════════════════
     # ④ Region zainteresowania (ROI)
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def _compute_roi(self, gray: np.ndarray,
                      block:      int   = 16,
                      var_thresh: float = 100.0,
                      morph_size: int   = 33) -> np.ndarray:
         """
         Oblicza maskę ROI na podstawie lokalnej wariancji jasności.
- 
+
         Obszary o niskiej wariancji (jednolite tło lub szum na brzegach obrazu)
         są wykluczane z dalszego przetwarzania. Maska jest wygładzana morfologicznie,
         aby usunąć artefakty wynikające z podziału blokowego.
- 
+
         Parametry
         ---------
         block      : rozmiar bloku (piksele) do obliczania wariancji lokalnej
         var_thresh : minimalna wariancja wymagana do zakwalifikowania bloku jako ROI
         morph_size : rozmiar elementu strukturalnego do morfologicznego wygładzania maski
- 
+
         Zwraca
         ------
         Tablicę bool: True = piksel wewnątrz ROI (zawiera linie papilarne).
@@ -228,23 +228,23 @@ class ImageProcessor:
         H, W  = gray.shape
         maska = np.zeros((H, W), dtype=np.uint8)
         f     = gray.astype(float)
- 
+
         # Bloki o wystarczającej wariancji → wewnątrz ROI
         for r in range(0, H, block):
             for c in range(0, W, block):
                 blok = f[r:r + block, c:c + block]
                 if blok.var() >= var_thresh:
                     maska[r:r + block, c:c + block] = 255
- 
+
         # Domknięcie + otwarcie: wypełnia dziury wewnątrz ROI i usuwa małe wyspy
         se    = self._get_structuring_element(morph_size, 'ellipse')
         maska = self._open(self._close(maska, se), se)
         return maska > 0
- 
+
     # ══════════════════════════════════════════════════════════════════════
     # ⑤ Pełny potok przetwarzania wstępnego odcisku palca
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def preprocess_fingerprint(self,
                                 image:      Image.Image,
                                 threshold:  int   = 128,
@@ -259,12 +259,12 @@ class ImageProcessor:
         """
         Pełny potok przetwarzania wstępnego:
             skala szarości → wzmocnienie Gaborem → binaryzacja progowa → maska ROI
- 
+
         Zwraca
         ------
         uint8 ndarray –  0 = piksel grzbietu (czarny linia),  255 = tło (białe).
         Wynik można przekazać bezpośrednio do KMM().
- 
+
         Parametry
         ----------
         threshold  : próg binaryzacji (0–255) nakładany na wzmocniony obraz Gabora.
@@ -284,7 +284,7 @@ class ImageProcessor:
         roi_var    : próg wariancji do wyznaczania ROI.
         """
         szary = self._to_gray(image)
- 
+
         # ① Wzmocnienie grzbietów filtrem Gabora
         #    Wynik: float [0, 1], JASNE wartości = grzbiecie
         wzmocniony = self.gabor_enhance(szary,
@@ -292,20 +292,20 @@ class ImageProcessor:
                                         ksize=ksize,
                                         sigma_perp=sigma_perp,
                                         sigma_par=sigma_par)
- 
+
         # ② Morfologiczne czyszczenie wzmocnionego obrazu
         #    Domknięcie zamyka drobne luki w grzbietach; otwarcie usuwa szum
         wzmU8 = (wzmocniony * 255).astype(np.uint8)
         se    = self._get_structuring_element(morph_size, 'ellipse')
         wzmU8 = self._open(self._close(wzmU8, se), se)
- 
+
         # ③ Binaryzacja z podanym progiem
         #    Jasny piksel (wzmU8 >= threshold) = grzbiet → 0  (czarny)
         #    Ciemny piksel (wzmU8  < threshold) = tło    → 255 (biały)
         binarny = np.where(wzmU8 >= threshold,
                            np.uint8(0),
                            np.uint8(255))
- 
+
         # ④ Wyznaczenie i zastosowanie maski ROI
         #    Piksele poza ROI (szum na brzegach, tło skanera) → tło (255)
         roi = self._compute_roi(szary,
@@ -313,26 +313,26 @@ class ImageProcessor:
                                 var_thresh=roi_var,
                                 morph_size=max(3, roi_block * 2 + 1))
         binarny[~roi] = 255
- 
+
         return binarny
- 
+
     # ══════════════════════════════════════════════════════════════════════
     # ⑥ Szkieletyzacja KMM  (Saeed, Rybnik, Tabędzki, Adamski 2002)
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def KMM(self, binarny: np.ndarray) -> np.ndarray:
         """
         Algorytm szkieletyzacji KMM – ścienienie do jednego piksela szerokości.
- 
+
         Wejście
         -------
         binarny : uint8 ndarray –  0 = piksel grzbietu (obiekt), 255 = tło.
                   Uzyskaj go z preprocess_fingerprint() lub innej binaryzacji.
- 
+
         Wyjście
         -------
         uint8 ndarray –  0 = piksel szkieletu, 255 = tło.
- 
+
         Kroki algorytmu (powtarzane do zbieżności)
         -------------------------------------------
         1. Piksele obiektu (1) dotykające tła krawędziowo (4-spójność)   → etykieta 2
@@ -343,7 +343,7 @@ class ImageProcessor:
               waga w LUT → usuń (→ 0);   waga poza LUT → zachowaj (→ 1)
         5. To samo dla N=3.
         6. Jeśli obraz niezmieniony → stop.
- 
+
         Kodowanie wag (z artykułu):
             128 │  1 │  2
              64 │  x │  4
@@ -369,10 +369,10 @@ class ImageProcessor:
             237, 239, 240, 241, 243, 244, 245, 246,
             247, 248, 249, 251, 252, 253, 254, 255,
         ]] = True
- 
+
         # ── Stałe pomocnicze ────────────────────────────────────────────────
         _Z = dict(mode='constant', constant_values=0)
- 
+
         # ── Tablica LUT fazy B: rozmiar największej spójnej składowej ───────
         #
         # Sąsiedzi kodowani bitami: bit0=NW, bit1=N, bit2=NE, bit3=W,
@@ -415,27 +415,27 @@ class ImageProcessor:
                             _kolejka.append(_nb)
                 _maks = max(_maks, _rozmiar)
             _lut_b[_wzorzec] = _maks
- 
+
         # ── Obraz roboczy: {0 = tło, 1 = obiekt} ───────────────────────────
         # Wejście: 0 = grzbiet (obiekt), 255 = tło → odwracamy konwencję wewnętrznie
         img = (binarny == 0).astype(np.uint8)
- 
+
         while True:
             poprzedni = img.copy()
- 
+
             # ── Faza A: klasyfikacja pikseli brzegowych ─────────────────────
             p = np.pad(img, 1, **_Z)
- 
+
             # Piksel obiektu z 4-spójnym sąsiadem tła → kontur krawędziowy (2)
             krawedz = ((p[:-2, 1:-1] == 0) | (p[2:, 1:-1] == 0) |
                        (p[1:-1, :-2] == 0) | (p[1:-1, 2:] == 0))
             img[(img == 1) & krawedz] = 2
- 
+
             # Piksel obiektu z sąsiadem tła wyłącznie po przekątnej → etykieta 3
             naroznik = ((p[:-2, :-2] == 0) | (p[:-2, 2:] == 0) |
                         (p[2:,  :-2] == 0) | (p[2:,  2:] == 0))
             img[(img == 1) & naroznik] = 3
- 
+
             # ── Faza B: usuwanie pikseli konturowych ────────────────────────
             #
             # Kryterium: piksel konturowy jest usuwany, gdy największa spójna
@@ -460,7 +460,7 @@ class ImageProcessor:
                          pc[2:,  2:  ] * 128).astype(np.uint8)
             maks_skladowa = _lut_b[wzorzec_b]
             img[kontur & (maks_skladowa >= 2) & (maks_skladowa <= 4)] = 0
- 
+
             # ── Faza C: sekwencyjne ścienienie wagowe, N=2 potem N=3 ────────
             #
             # Schemat blokowy z artykułu (Dodatek) pokazuje jawną pętlę rastrową
@@ -485,47 +485,46 @@ class ImageProcessor:
                         if             img[r+1, c  ]: w +=  16  # S
                         if c < W-1 and img[r+1, c+1]: w +=   8  # SE
                     img[r, c] = 0 if _lut[w] else 1
- 
+
             # ── Sprawdzenie zbieżności ─────────────────────────────────────
             if np.array_equal(img, poprzedni):
                 break
- 
+
         # Powrót do konwencji wyjściowej: 0 = szkielet (czarny), 255 = tło (białe)
         return np.where(img == 1, np.uint8(0), np.uint8(255))
 
-
-       # ══════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
     # ⑦ Szkielet morfologiczny (zachowany do porównania z KMM)
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def skeletonize(self, binarny: np.ndarray) -> np.ndarray:
         """
-        Szkielet morfologiczny.
- 
+        Szkielet morfologiczny w stylu Zhang–Suen – zachowany do porównania z KMM.
+
         Algorytm iteracyjnie eroduje obraz i zbiera resztki (residua) między
         kolejnymi krokami erozji a ich otwarciem, aż obiekt całkowicie zniknie.
         Suma residuów tworzy szkielet.
- 
+
         Wejście
         -------
         binarny : uint8 ndarray – 0 = piksel grzbietu, 255 = tło.
                   Ten sam format co wejście/wyjście KMM().
- 
+
         Wyjście
         -------
         uint8 ndarray – 0 = piksel szkieletu, 255 = tło.
         """
         # Konwersja do konwencji wewnętrznej: 255 = obiekt, 0 = tło
         aktualny = np.where(binarny == 0, np.uint8(255), np.uint8(0))
- 
+
         # _erode używa mode='edge', więc wypełniony obiekt bez ramki nigdy nie
         # zostałby wyerodowany. Dodajemy 1-pikselową ramkę zer, aby erozja
         # mogła stopniowo zjadać krawędzie i algorytm mógł osiągnąć zbieżność.
         aktualny = np.pad(aktualny, 1, mode='constant', constant_values=0)
- 
+
         se       = self._get_structuring_element(3, 'cross')
         szkielet = np.zeros_like(aktualny)
- 
+
         while aktualny.max() > 0:
             erodowany = self._erode(aktualny, se)
             otwarty   = self._dilate(erodowany, se)
@@ -535,100 +534,37 @@ class ImageProcessor:
             ).astype(np.uint8)
             szkielet  = np.maximum(szkielet, residuum)
             aktualny  = erodowany
- 
+
         # Odcinamy pomocniczą ramkę i wracamy do konwencji: 0 = szkielet, 255 = tło
         szkielet = szkielet[1:-1, 1:-1]
         return np.where(szkielet > 0, np.uint8(0), np.uint8(255))
-    
-    import numpy as np
 
-    # def skeletonize(self, image: np.ndarray, kernel: np.ndarray = None) -> np.ndarray:
-    #     """
-    #     Szkieletyzacja morfologiczna oparta wyłącznie na NumPy i metodach klasy.
-    #     Konwencja: obiekt = jasne piksele (>0), tło = czarne piksele (0).
-    #     """
-    #     # Jeśli nie podano kernela, pobieramy domyślny z metody klasy
-    #     if kernel is None:
-    #         kernel = self._get_structuring_element(3, 'cross')
-
-    #     # Dodajemy 1-pikselową ramkę zer, aby zapobiec nieskończonej pętli
-    #     # w przypadku, gdy obiekt dotyka krawędzi obrazu.
-    #     img = np.pad(image.copy(), 1, mode='constant', constant_values=0)
-    #     skeleton = np.zeros_like(img)
-
-    #     # Główna pętla szkieletyzacji Lantuéjoula
-    #     while img.max() > 0:  # img.max() > 0 jest szybsze i bezpieczniejsze niż np.sum() == 0
-    #         # Zastępujemy cv.erode i cv.dilate wewnętrznymi metodami
-    #         erosion = self._erode(img, kernel)
-    #         dilatate = self._dilate(erosion, kernel)
-
-    #         # Bezpieczne odejmowanie zapobiegające błędom underflow (wartości ujemnych)
-    #         subs_img = np.clip(
-    #             img.astype(np.int16) - dilatate.astype(np.int16), 0, 255
-    #         ).astype(np.uint8)
-
-    #         # Zastępujemy cv.bitwise_or operatorem np.maximum (dla maski 0 i 255 działa identycznie)
-    #         skeleton = np.maximum(skeleton, subs_img)
-            
-    #         # Aktualizujemy obraz do kolejnej iteracji
-    #         img = erosion
-
-    #     # Odcinamy pomocniczą ramkę
-    #     skeleton = skeleton[1:-1, 1:-1]
-
-    #     # =====================================================================
-    #     # ORYGINALNY POST-PROCESSING Z PRZESUNIĘCIAMI (Przetłumaczony na NumPy)
-    #     # Odkomentuj poniższy kod tylko wtedy, gdy na pewno go potrzebujesz!
-    #     # =====================================================================
-        
-    #     # Przesunięcie w dół
-    #     down = np.zeros_like(skeleton)
-    #     down[1:-1, :] = skeleton[0:-2, :]
-    #     down_mask = np.clip(down.astype(np.int16) - skeleton.astype(np.int16), 0, 255).astype(np.uint8)
-    #     down_mask[0:-2, :] = down_mask[1:-1, :]
-
-    #     # Przesunięcie w lewo
-    #     left = np.zeros_like(skeleton)
-    #     left[:, 1:-1] = skeleton[:, 0:-2]
-    #     left_mask = np.clip(left.astype(np.int16) - skeleton.astype(np.int16), 0, 255).astype(np.uint8)
-    #     left_mask[:, 0:-2] = left_mask[:, 1:-1]
-
-    #     # Zastąpienie obrazu samą maską 'down_mask' (zgodnie z oryginalnym cv.bitwise_or)
-    #     skeleton = down_mask.copy()
-        
-
-    #     # Finalne formatowanie wyjścia
-    #     output = np.zeros_like(skeleton)
-    #     output[skeleton < 250] = 255
-
-    #     return output
-    
-        # ══════════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
     # ⑧ Wykrywanie minucji metodą liczby skrzyżowań (crossing number)
     # ══════════════════════════════════════════════════════════════════════
- 
+
     def detect_minutiae(self,
                         szkielet:    np.ndarray,
                         margines:    int = 10) -> dict:
         """
         Wykrywa minucje na obrazie szkieletu metodą liczby skrzyżowań (CN).
- 
+
         Liczba skrzyżowań dla piksela p:
             CN = 1/2 * sum|P_k - P_{k+1}|   (k = 1..8, indeksowanie cykliczne)
         gdzie P_k to wartości 8 sasiadow w kolejnosci zgodnej z ruchem wskazowek
         zegara, zakodowane jako 0/1.
- 
+
         Interpretacja CN:
             CN = 1  zakończenie grzbietu  (ridge ending)
             CN = 3  bifurkacja            (ridge bifurcation)
- 
+
         Parametry
         ----------
         szkielet  : uint8 ndarray - 0 = piksel szkieletu, 255 = tlo.
                     Wynik KMM() lub skeletonize().
         margines  : szerokosc ramki (piksele) wykluczanej z detekcji.
                     Usuwa falszywe minucje na brzegach obrazu / maski ROI.
- 
+
         Zwraca
         ------
         Slownik z kluczami:
@@ -637,10 +573,10 @@ class ImageProcessor:
         """
         # Binaryzacja szkieletu: 1 = piksel szkieletu, 0 = tlo
         s = (szkielet == 0).astype(np.int16)
- 
+
         H, W = s.shape
         p    = np.pad(s, 1, mode='constant', constant_values=0)
- 
+
         # 8 sasiadow w kolejnosci zgodnej z ruchem wskazowek zegara:
         #   NW -> N -> NE -> E -> SE -> S -> SW -> W
         sasiedzi = np.stack([
@@ -653,69 +589,404 @@ class ImageProcessor:
             p[2:,  :-2 ],   # SW
             p[1:-1, :-2],   # W
         ], axis=0)  # ksztalt: (8, H, W)
- 
+
         # CN = 1/2 * sum|P_k - P_{k+1}|  (k cykliczne po 8 sasiadach)
         suma = np.zeros((H, W), dtype=np.int16)
         for k in range(8):
             suma += np.abs(sasiedzi[k] - sasiedzi[(k + 1) % 8])
         cn = (suma // 2).astype(np.uint8)
- 
+
         # Maska aktywnych pikseli szkieletu (bez marginesu przy brzegu)
         maska = np.zeros((H, W), dtype=bool)
         maska[margines:H - margines, margines:W - margines] = True
         maska &= (s == 1)
- 
+
         zakonczenia = [tuple(pkt) for pkt in np.argwhere(maska & (cn == 1))]
         bifurkacje  = [tuple(pkt) for pkt in np.argwhere(maska & (cn == 3))]
- 
+
         return {
             'zakonczenia': zakonczenia,
             'bifurkacje':  bifurkacje,
         }
- 
+
     def rysuj_minucje(self,
                       szkielet: np.ndarray,
                       minucje:  dict,
                       r:        int = 4) -> np.ndarray:
         """
         Rysuje minucje na kopii obrazu szkieletu jako kolorowy obraz RGB.
- 
+
         Zakonczenia  czerwone kolka
         Bifurkacje   niebieskie kolka
- 
+
         Parametry
         ----------
         szkielet : uint8 ndarray - 0 = piksel szkieletu, 255 = tlo.
         minucje  : slownik zwrocony przez detect_minutiae().
         r        : promien kolka oznaczajacego minucje (piksele).
- 
+
         Zwraca
         ------
         uint8 ndarray ksztaltu (H, W, 3) - obraz RGB gotowy do zapisu/wyswietlenia.
         """
         # Konwersja szkieletu do RGB (czarne linie na bialym tle)
         rgb = np.stack([szkielet, szkielet, szkielet], axis=-1).copy()
- 
+
         H, W = szkielet.shape
         Y, X = np.ogrid[:H, :W]
- 
+
         def _kolo(srodek, promien):
             wy, wx = srodek
             return (Y - wy) ** 2 + (X - wx) ** 2 <= promien ** 2
- 
+
         # Zakonczenia - czerwone (R=255, G=0, B=0)
         for pkt in minucje.get('zakonczenia', []):
             m = _kolo(pkt, r)
             rgb[m, 0] = 255
             rgb[m, 1] = 0
             rgb[m, 2] = 0
- 
+
         # Bifurkacje - niebieskie (R=0, G=0, B=255)
         for pkt in minucje.get('bifurkacje', []):
             m = _kolo(pkt, r)
             rgb[m, 0] = 0
             rgb[m, 1] = 0
             rgb[m, 2] = 255
- 
+
         return rgb.astype(np.uint8)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Pipeline alternatywny wg Cuevas (2019)
+    # Kolejność kroków:
+    #   ⑨  normalize          – normalizacja kontrastu
+    #   ⑩  segment            – segmentacja wariancyjna (maska ROI)
+    #   ⑪  orientation_map    – mapa orientacji grzbietów (blokowa)
+    #   ⑫  frequency_map      – mapa lokalnej częstotliwości grzbietów
+    #   ⑬  gabor_filter_map   – filtr Gabora per piksel (orientacja+freq z map)
+    #   ⑭  preprocess_pipeline – pełny potok łączący ⑨–⑬ + binaryzacja
+    # ══════════════════════════════════════════════════════════════════════
+
+    def normalize(self, gray: np.ndarray,
+                  M0: float = 100.0,
+                  V0: float = 100.0) -> np.ndarray:
+        """
+        Normalizacja kontrastu obrazu odcisku palca.
+
+        Każdy piksel jest przeskalowany tak, aby cały obraz miał zadaną
+        wartość średnią M0 i wariancję V0 (wzór z Hong et al. 1998):
+
+            Norm(i,j) = M0 + sqrt(V0 * (I(i,j) - M)^2 / V)
+                        znak: + jeśli I > M, - w p.p.
+
+        Zwraca float64 ndarray w przybliżeniu w [0, 255].
+        """
+        f  = gray.astype(np.float64)
+        M  = f.mean()
+        V  = f.var()
+        diff = f - M
+        norm = np.where(
+            diff >= 0,
+            M0 + np.sqrt(V0 * diff ** 2 / (V + 1e-8)),
+            M0 - np.sqrt(V0 * diff ** 2 / (V + 1e-8)),
+        )
+        # Przycięcie do [0, 255] i zwrot jako float64
+        return np.clip(norm, 0, 255)
+
+    def segment(self, norm: np.ndarray,
+                block:     int   = 16,
+                threshold: float = 0.2) -> np.ndarray:
+        """
+        Segmentacja obrazu odcisku: wyznaczenie maski ROI na podstawie
+        odchylenia standardowego w blokach.
+
+        Bloki o niskim odchyleniu standardowym (jednorodne tło lub szum
+        na brzegach) są wykluczane.
+
+        Parametry
+        ----------
+        norm      : znormalizowany obraz (float64, wynik normalize()).
+        block     : rozmiar bloku w pikselach.
+        threshold : ułamek [0, 1] globalnego odchylenia std jako próg.
+                    Bloki z std < threshold * std_globalne → tło.
+
+        Zwraca
+        ------
+        maska : bool ndarray  True = piksel wewnątrz ROI.
+        """
+        H, W  = norm.shape
+        maska = np.zeros((H, W), dtype=np.uint8)
+        prog  = threshold * norm.std()
+
+        for r in range(0, H, block):
+            for c in range(0, W, block):
+                blok = norm[r:r + block, c:c + block]
+                if blok.std() > prog:
+                    maska[r:r + block, c:c + block] = 255
+
+        # Morfologiczne wygładzenie maski
+        se    = self._get_structuring_element(block * 2 + 1, 'ellipse')
+        maska = self._open(self._close(maska, se), se)
+        return maska > 0
+
+    def orientation_map(self, norm: np.ndarray,
+                        block: int = 16,
+                        smooth_iter: int = 2) -> np.ndarray:
+        """
+        Mapa orientacji grzbietów metodą gradientową (Hong et al. 1998).
+
+        Dla każdego bloku oblicza dominującą orientację grzbietu
+        z gradientów obrazu. Wynik jest opcjonalnie wygładzany przez
+        uśrednianie składowych podwójnego kąta w sąsiadujących blokach.
+
+        Zwraca
+        ------
+        ori : float64 ndarray kształtu (H, W), wartości w [0, π).
+              0 = poziomy grzbiet, π/2 = pionowy.
+        """
+        f  = norm.astype(np.float64)
+        Kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], float)
+        gx = self._convolve2d(f, Kx)
+        gy = self._convolve2d(f, Kx.T)
+
+        # Składowe podwójnego kąta (eliminują niejednoznaczność π)
+        Vx = 2.0 * gx * gy
+        Vy = gx ** 2 - gy ** 2
+
+        H, W = f.shape
+        bVx  = np.zeros((H, W))
+        bVy  = np.zeros((H, W))
+
+        # Uśrednianie per blok
+        for r in range(0, H, block):
+            for c in range(0, W, block):
+                bVx[r:r + block, c:c + block] = Vx[r:r + block, c:c + block].mean()
+                bVy[r:r + block, c:c + block] = Vy[r:r + block, c:c + block].mean()
+
+        # Opcjonalne wygładzanie mapy blokowej (redukuje nieciągłości)
+        for _ in range(smooth_iter):
+            bVx = self._convolve2d(bVx,
+                  np.ones((block, block), float) / (block * block))
+            bVy = self._convolve2d(bVy,
+                  np.ones((block, block), float) / (block * block))
+
+        return 0.5 * np.arctan2(bVx, bVy) + np.pi / 2.0
+
+    def frequency_map(self, norm: np.ndarray,
+                      ori:   np.ndarray,
+                      block: int = 32,
+                      min_freq: float = 1/25,
+                      max_freq: float = 1/5) -> np.ndarray:
+        """
+        Mapa lokalnej częstotliwości grzbietów (Hong et al. 1998).
+
+        Dla każdego bloku:
+        1. Obróć blok o orientację lokalną (grzbiety stają się pionowe).
+        2. Zsumuj kolumny → profil intensywności wzdłuż osi ⊥ grzbietom.
+        3. Policz przejścia przez maksimum (szczyty) → okres T.
+        4. Częstotliwość = 1 / T.
+
+        Wartości poza zakresem [min_freq, max_freq] są zastępowane
+        medianą sąsiedztwa (artefakty słabych bloków).
+
+        Zwraca
+        ------
+        freq : float64 ndarray kształtu (H, W).
+        """
+        H, W     = norm.shape
+        freq_blk = np.zeros((H, W))
+        pad      = block // 2
+
+        # Rozmiar siatki bloków
+        for r in range(0, H, block):
+            for c in range(0, W, block):
+                blok_n = norm[r:r + block, c:c + block]
+                blok_o = ori [r:r + block, c:c + block]
+                if blok_n.shape[0] < block // 2 or blok_n.shape[1] < block // 2:
+                    continue
+
+                # Orientacja dominująca bloku
+                theta = blok_o.mean()
+
+                # Rotacja bloku tak, by grzbiecie były pionowe
+                cos_t, sin_t = np.cos(theta), np.sin(theta)
+                bh, bw = blok_n.shape
+                cy, cx = bh / 2.0, bw / 2.0
+                Y, X   = np.mgrid[:bh, :bw].astype(float)
+                Xr = ( (X - cx) * cos_t + (Y - cy) * sin_t) + cx
+                Yr = (-(X - cx) * sin_t + (Y - cy) * cos_t) + cy
+                Xr = np.clip(Xr, 0, bw - 1).astype(int)
+                Yr = np.clip(Yr, 0, bh - 1).astype(int)
+                obroc = blok_n[Yr, Xr]
+
+                # Profil – suma wzdłuż wierszy (rzutowanie na oś X)
+                profil = obroc.sum(axis=0).astype(float)
+                profil -= profil.mean()
+
+                # Znajdź szczyty profilu (przejście przez 0 z - na +)
+                szczyty = np.where(
+                    (profil[:-1] < 0) & (profil[1:] >= 0)
+                )[0]
+
+                if len(szczyty) >= 2:
+                    T = (szczyty[-1] - szczyty[0]) / (len(szczyty) - 1)
+                    f_val = 1.0 / T if T > 0 else 0.0
+                else:
+                    f_val = 0.0
+
+                freq_blk[r:r + block, c:c + block] = f_val
+
+        # Zastąp nieprawidłowe wartości medianą lokalną (5×5 bloków)
+        valid  = (freq_blk >= min_freq) & (freq_blk <= max_freq)
+        mediana = np.median(freq_blk[valid]) if valid.any() else (min_freq + max_freq) / 2
+        freq_blk[~valid] = mediana
+
+        return freq_blk
+
+    def gabor_filter_map(self, norm: np.ndarray,
+                         ori:  np.ndarray,
+                         freq: np.ndarray,
+                         kx:   float = 0.65,
+                         ky:   float = 0.65) -> np.ndarray:
+        """
+        Filtrowanie Gaborem z indywidualnym jądrem per piksel (orientacja i
+        częstotliwość z map).
+
+        Jądro Gabora o symetrii parzystej (formuła z Hong et al. 1998):
+
+            G(x,y) = exp( -1/2 * (xr²/σx² + yr²/σy²) ) * cos(2π·f·xr)
+
+        gdzie σx = kx/f,  σy = ky/f,  xr/yr to osie obrócone o orientację.
+
+        Piksele z tą samą orientacją i częstotliwością (w obrębie bloku)
+        dzielą to samo jądro – obliczenia są grupowane per unikalny blok,
+        co ogranicza liczbę splotów.
+
+        Zwraca
+        ------
+        float64 ndarray w [0, 1], jasny = grzbiet.
+        """
+        H, W    = norm.shape
+        wynik   = np.zeros((H, W), float)
+        odwied  = np.zeros((H, W), dtype=bool)
+
+        # Rozmiar jądra: 3σ w każdą stronę (co najmniej 3 piksele)
+        def _sigma(f):
+            return max(3.0 / f, 3.0)
+
+        # Grupuj bloki 16×16 o zbliżonej orientacji i częstotliwości
+        blok = 16
+        for r in range(0, H, blok):
+            for c in range(0, W, blok):
+                theta  = ori [r:r + blok, c:c + blok].mean()
+                f_val  = freq[r:r + blok, c:c + blok].mean()
+                if f_val <= 0:
+                    continue
+
+                sx = kx / f_val
+                sy = ky / f_val
+                hs = int(np.ceil(3.0 * max(sx, sy)))
+                sz = 2 * hs + 1
+
+                # Budowa jądra Gabora dla tego bloku
+                h = hs
+                x, y     = np.meshgrid(np.arange(-h, h + 1),
+                                       np.arange(-h, h + 1), indexing='xy')
+                cos_t, sin_t = np.cos(theta), np.sin(theta)
+                xr = -x * sin_t + y * cos_t
+                yr =  x * cos_t + y * sin_t
+                jadro = (np.exp(-0.5 * (xr**2 / sx**2 + yr**2 / sy**2))
+                         * np.cos(2.0 * np.pi * f_val * xr))
+                jadro -= jadro.mean()
+
+                # Splot tylko tego bloku (z paddingiem)
+                r0, r1 = max(0, r - hs), min(H, r + blok + hs)
+                c0, c1 = max(0, c - hs), min(W, c + blok + hs)
+                patch  = norm[r0:r1, c0:c1].astype(float)
+                resp   = self._convolve2d(patch, jadro)
+
+                # Wytnij wynik tylko dla bieżącego bloku
+                dr = r - r0
+                dc = c - c0
+                bh = min(blok, H - r)
+                bw = min(blok, W - c)
+                wynik[r:r + bh, c:c + bw] = resp[dr:dr + bh, dc:dc + bw]
+
+        # Normalizacja do [0, 1]
+        wynik -= wynik.min()
+        wynik /= (wynik.max() + 1e-8)
+        return wynik
+
+    def preprocess_pipeline(self,
+                             image:      Image.Image,
+                             threshold:  int   = 128,
+                             block:      int   = 16,
+                             seg_thresh: float = 0.2,
+                             kx:         float = 0.65,
+                             ky:         float = 0.65,
+                             M0:         float = 100.0,
+                             V0:         float = 100.0) -> dict:
+        """
+        Pełny potok przetwarzania wstępnego wg Cuevas / Hong et al.:
+
+            skala szarości
+              → normalizacja (normalize)
+              → segmentacja (segment)
+              → mapa orientacji (orientation_map)
+              → mapa częstotliwości (frequency_map)
+              → filtr Gabora per piksel (gabor_filter_map)
+              → binaryzacja progowa
+              → maska ROI
+
+        Parametry
+        ----------
+        threshold  : próg binaryzacji (0–255) nałożony na wynik Gabora.
+                     Jasne piksele (>= threshold) = grzbiet → 0 (czarny).
+        block      : rozmiar bloku dla orientacji i segmentacji (piksele).
+        seg_thresh : próg segmentacji (ułamek globalnego std).
+        kx, ky     : współczynniki szerokości jądra Gabora (σx = kx/f).
+        M0, V0     : docelowa średnia i wariancja normalizacji.
+
+        Zwraca
+        ------
+        Słownik z kluczami:
+            'normalized'   : float64 ndarray – obraz po normalizacji
+            'mask'         : bool ndarray    – maska ROI
+            'orientation'  : float64 ndarray – mapa orientacji [rad]
+            'frequency'    : float64 ndarray – mapa częstotliwości [cykle/px]
+            'enhanced'     : float64 ndarray – wynik Gabora w [0, 1]
+            'binary'       : uint8 ndarray   – 0 = grzbiet, 255 = tło
+        """
+        szary = self._to_gray(image)
+
+        # ① Normalizacja kontrastu
+        znorm = self.normalize(szary, M0=M0, V0=V0)
+
+        # ② Segmentacja – maska ROI
+        maska = self.segment(znorm, block=block, threshold=seg_thresh)
+
+        # ③ Mapa orientacji grzbietów
+        ori = self.orientation_map(znorm, block=block)
+
+        # ④ Mapa lokalnej częstotliwości grzbietów
+        freq = self.frequency_map(znorm, ori, block=block * 2)
+
+        # ⑤ Filtrowanie Gaborem z mapami orientacji i częstotliwości
+        wzmocniony = self.gabor_filter_map(znorm, ori, freq, kx=kx, ky=ky)
+
+        # ⑥ Binaryzacja: jasny piksel (>= threshold/255) = grzbiet → 0
+        wzmU8  = (wzmocniony * 255).astype(np.uint8)
+        binarny = np.where(wzmU8 >= threshold,
+                           np.uint8(0),
+                           np.uint8(255))
+
+        # ⑦ Zastosowanie maski ROI – poza ROI → tło
+        binarny[~maska] = 255
+
+        return {
+            'normalized':  znorm,
+            'mask':        maska,
+            'orientation': ori,
+            'frequency':   freq,
+            'enhanced':    wzmocniony,
+            'binary':      binarny,
+        }

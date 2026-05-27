@@ -28,6 +28,8 @@ Raport z projektu: [`Projekt_2/Raport_2.pdf`](Projekt_2/Raport_2.pdf)
 
 ## Projekt 3
 
+Implementacja mechanizmu do rozpoznawania minucji na odciskach palców.
+
 
 
 ## Technologie
@@ -36,7 +38,7 @@ Raport z projektu: [`Projekt_2/Raport_2.pdf`](Projekt_2/Raport_2.pdf)
 |---------|-------|------------|
 | Projekt 1 | Python 3.8+ | Tkinter, Pillow, NumPy, Matplotlib |
 | Projekt 2 | Python 3.8+ | Pillow, NumPy, Matplotlib |
-| Projekt 3 | – | – |
+| Projekt 3 | Python 3.8+ | Pillow, NumPy, Matplotlib |
 
 ---
 

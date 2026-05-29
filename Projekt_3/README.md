@@ -17,7 +17,7 @@ Do poprawnego działania wymagane są biblioteki **NumPy**, **Pillow (PIL)** ora
 
 ```bash
 # Instalacja zależności
-pip install numpy pillow scipy matplotlib
+pip install numpy pillow matplotlib
 
 # Uruchomienie demonstracji
 jupyter notebook tests.ipynb

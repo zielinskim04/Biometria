@@ -26,9 +26,14 @@ Szczegóły projektu: [`Projekt_2/README.md`](Projekt_2/README.md)
 Raport z projektu: [`Projekt_2/Raport_2.pdf`](Projekt_2/Raport_2.pdf)
 
 
-## Projekt 3
+## Projekt 3 - Rozpoznawanie odcisków palców
 
 Implementacja mechanizmu do rozpoznawania minucji na odciskach palców.
+
+Szczegóły projektu: [`Projekt_3/README.md`](Projekt_3/README.md)
+
+Raport z projektu: [`Projekt_3/Raport_3.pdf`](Projekt_3/Raport_3.pdf)
+
 
 
 
